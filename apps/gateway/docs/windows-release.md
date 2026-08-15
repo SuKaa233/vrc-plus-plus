@@ -1,6 +1,6 @@
 # Windows 发布、签名与双源更新
 
-> 实现批注（2026-08-15）：🟡 流程和代码已完成，开发包可构建；可信证书、正式对象存储和 GitHub Release 尚未配置，因此不能声称当前开发包已签名或可线上自动更新。
+> 实现批注（2026-08-16）：🟡 WebView2 桌面窗口、关闭后托盘驻留、单实例唤醒、浏览器回退和开发 ZIP 流程已完成；可信证书、WebView2 缺失环境和正式更新源仍待发布验收。
 
 > 首个候选版本：`0.9.0-beta.1`。候选包允许无证书供小范围验收；对外公开发布仍必须完成本文第 4 节检查。
 
@@ -33,11 +33,14 @@ $env:VRC_HARBOR_UPDATE_URLS = 'https://download.example.cn/vrc-plus-plus/update-
 
 ## 3. 安装更新
 
+开发 ZIP 解压后可直接双击 `vrc-plus-plus.exe`；也可运行同目录的 `install.ps1 -DesktopShortcut` 安装到当前用户目录、创建快捷方式并立即启动。应用默认使用 WebView2 窗口，关闭窗口后本地网关继续在托盘运行；再次双击快捷方式会唤醒已有实例。WebView2 Runtime 缺失时自动改用默认浏览器，不影响本地 API。
+
 设置页执行“检查 -> 下载 -> 安装并重启”。下载包先进入用户数据目录的 `updates`，校验后仅提取主程序。安装时从单独复制出的 update-helper 启动，等待旧进程退出，再保留 `.previous` 备份、替换主程序并重启；这样不会由正在运行的主 exe 替换自身。
 
 ## 4. 发布前仍需验证
 
 - 在干净 Windows 10/11 当前用户环境安装、托盘常驻、退出和卸载；
+- 在未预装 WebView2 Runtime 的 Windows 10 环境验证浏览器回退与安装提示；
 - 使用真实 EV/OV 代码签名证书签名并通过 SmartScreen/Authenticode 检查；
 - 两个正式 HTTPS 来源发布完全一致的 ZIP 与 manifest；
 - 手工破坏 ZIP 验证 SHA-256 拒绝；

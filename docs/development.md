@@ -55,7 +55,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
 双击或直接运行 EXE 时默认打开内嵌 WebView2 窗口；缺少 WebView2 Runtime 时自动回退到默认浏览器。程序使用 Windows 单实例守卫，重复启动会唤醒已有窗口。常用参数：
 
 - `-desktop=false -open-browser=true`：直接使用默认浏览器；
-- `-open-browser=false`：不主动打开浏览器（仅在同时关闭桌面窗口时用于自动化或服务场景）；
+- `-desktop=false -open-browser=false`：不打开任何窗口，用于自动化或前后端分离开发；
 - `-tray=false`：不显示 Windows 通知区域图标；
 - `-listen`、`-data-dir`、`-dev-origin`：覆盖监听地址、数据目录和开发源站。
 

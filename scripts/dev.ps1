@@ -12,7 +12,7 @@ if (-not (Test-Path -LiteralPath $goExe)) {
 
 Push-Location (Join-Path $workspace 'apps\gateway')
 try {
-    & $goExe run '.\cmd\gateway' -listen "127.0.0.1:$Port" -dev-origin 'http://127.0.0.1:5173' -data-dir (Join-Path $workspace '.data') -open-browser=false
+    & $goExe run '.\cmd\gateway' -listen "127.0.0.1:$Port" -dev-origin 'http://127.0.0.1:5173' -data-dir (Join-Path $workspace '.data') -desktop=false -open-browser=false
 } finally {
     Pop-Location
 }

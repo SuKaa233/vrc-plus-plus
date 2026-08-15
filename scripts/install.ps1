@@ -6,9 +6,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
-$sourceExe = Join-Path $workspace 'dist\vrc-plus-plus.exe'
+$bundledExe = Join-Path $PSScriptRoot 'vrc-plus-plus.exe'
+$developmentExe = Join-Path $workspace 'dist\vrc-plus-plus.exe'
+$sourceExe = if (Test-Path -LiteralPath $bundledExe) { $bundledExe } else { $developmentExe }
 if (-not (Test-Path -LiteralPath $sourceExe)) {
-    throw 'Build dist\vrc-plus-plus.exe before installing.'
+    throw 'VRC++ executable was not found next to the installer or in dist.'
 }
 
 $resolvedParent = [System.IO.Path]::GetFullPath((Split-Path -Parent $InstallRoot))
@@ -44,3 +46,4 @@ if ($Startup) {
 
 Write-Host "VRC++ installed to $InstallRoot"
 Write-Host 'User data remains in the configured VRC++ data directory.'
+Start-Process -FilePath $installedExe

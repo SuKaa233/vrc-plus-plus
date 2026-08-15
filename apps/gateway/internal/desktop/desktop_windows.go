@@ -80,7 +80,7 @@ func (m *Manager) controlWindow(ctx context.Context, window webview.WebView, don
 	for {
 		select {
 		case <-ctx.Done():
-			window.Dispatch(window.Terminate)
+			window.Dispatch(window.Destroy)
 			return
 		case <-done:
 			return

@@ -43,7 +43,7 @@ try {
     New-Item -ItemType Directory -Path 'dist' -Force | Out-Null
     Push-Location 'apps\gateway'
     try {
-        & $goExe build -trimpath -ldflags="-s -w -X main.version=$releaseVersion" -o '..\..\dist\vrc-plus-plus.exe' '.\cmd\gateway'
+        & $goExe build -trimpath -ldflags="-H windowsgui -s -w -X main.version=$releaseVersion" -o '..\..\dist\vrc-plus-plus.exe' '.\cmd\gateway'
         if ($LASTEXITCODE -ne 0) { throw 'Gateway build failed.' }
     } finally {
         Pop-Location
