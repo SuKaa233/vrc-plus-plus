@@ -1,0 +1,11 @@
+{
+  "name": "vrc-plus-plus",
+  "version": "0.9.0-beta.1",
+  "private": true,
+  "scripts": {
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "test:web": "npm --prefix apps/web run test",
+    "typecheck:web": "npm --prefix apps/web run typecheck"
+  }
+}

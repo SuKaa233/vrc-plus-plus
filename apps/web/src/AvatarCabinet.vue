@@ -1,0 +1,49 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { Box, Monitor, RefreshCw, Search, Smartphone, Tag } from '@lucide/vue'
+import { LocalApi, type Avatar, type DataEnvelope } from './api'
+
+const props = defineProps<{ storageKey: string; mediaUrl: (value?: string) => string }>()
+const api = new LocalApi()
+const avatars = ref<DataEnvelope<Avatar> | null>(null)
+const query = ref('')
+const platform = ref('all')
+const performance = ref('all')
+const selected = ref<Avatar | null>(null)
+const tags = ref<Record<string, string[]>>({})
+const tagInput = ref('')
+const loading = ref(false)
+const error = ref('')
+const filtered = computed(() => {
+  const text = query.value.trim().toLocaleLowerCase()
+  return (avatars.value?.items ?? []).filter((item) => {
+    if (platform.value !== 'all' && !item.platforms?.includes(platform.value)) return false
+    if (performance.value !== 'all' && !Object.values(item.performance ?? {}).some((value) => value?.toLocaleLowerCase() === performance.value)) return false
+    return !text || [item.name,item.authorName,item.id,...(tags.value[item.id] ?? [])].some((value) => value?.toLocaleLowerCase().includes(text))
+  })
+})
+async function load(refresh = false) { loading.value = true; error.value = ''; try { avatars.value = await api.favoriteAvatars(refresh) } catch (cause) { error.value = cause instanceof Error ? cause.message : '头像收藏读取失败' } finally { loading.value = false } }
+function rating(item: Avatar) { const values = Object.values(item.performance ?? {}).filter(Boolean); return values[0] || '未知' }
+function ratingClass(item: Avatar) { return rating(item).toLocaleLowerCase().replace(/\s+/g,'-') }
+function saveTags() { localStorage.setItem(`vrc-harbor-avatar-tags:${props.storageKey}`, JSON.stringify(tags.value)) }
+function addTag() { if (!selected.value) return; const value = tagInput.value.trim().slice(0,24); if (!value) return; tags.value = {...tags.value,[selected.value.id]:[...new Set([...(tags.value[selected.value.id] ?? []),value])].slice(0,10)}; tagInput.value=''; saveTags() }
+function removeTag(value:string) { if (!selected.value) return; tags.value={...tags.value,[selected.value.id]:(tags.value[selected.value.id]??[]).filter((item)=>item!==value)}; saveTags() }
+onMounted(() => { try { tags.value=JSON.parse(localStorage.getItem(`vrc-harbor-avatar-tags:${props.storageKey}`)||'{}') } catch { tags.value={} }; void load() })
+watch(selected, (item) => { if (item) localStorage.setItem(`vrc-harbor-recent-avatar:${props.storageKey}`, JSON.stringify({id:item.id,name:item.name,imageUrl:item.thumbnailImageUrl||item.imageUrl,openedAt:new Date().toISOString()})) })
+</script>
+
+<template>
+  <section class="avatar-cabinet panel wide-view">
+    <header><div><span class="panel-kicker">VRChat 收藏</span><h2>头像收藏</h2><p>收藏与本机标签。</p></div><button :disabled="loading" @click="load(true)"><RefreshCw :size="15" :class="{spin:loading}" />刷新</button></header>
+    <p v-if="error" class="avatar-error">{{ error }}</p>
+    <div class="avatar-filters"><label><Search :size="15" /><input v-model="query" placeholder="搜索头像、作者、ID 或本机标签" /></label><select v-model="platform"><option value="all">全部平台</option><option value="standalonewindows">PC</option><option value="android">Quest / Android</option><option value="ios">iOS</option></select><select v-model="performance"><option value="all">全部性能</option><option value="excellent">Excellent</option><option value="good">Good</option><option value="medium">Medium</option><option value="poor">Poor</option><option value="verypoor">Very Poor</option></select><span>{{ filtered.length }} / {{ avatars?.items.length ?? 0 }}</span></div>
+    <div class="avatar-layout"><div class="avatar-grid"><button v-for="avatar in filtered" :key="avatar.id" :class="{active:selected?.id===avatar.id}" @click="selected=avatar"><div><img v-if="avatar.thumbnailImageUrl || avatar.imageUrl" :src="mediaUrl(avatar.thumbnailImageUrl || avatar.imageUrl)" alt="" loading="lazy" /><Box v-else :size="25" /><span :data-rating="ratingClass(avatar)">{{ rating(avatar) }}</span></div><strong>{{ avatar.name }}</strong><small>{{ avatar.authorName || '未知作者' }}</small><em><Monitor v-if="avatar.platforms?.includes('standalonewindows')" :size="12" /><Smartphone v-if="avatar.platforms?.includes('android')" :size="12" /><i v-for="tag in tags[avatar.id]?.slice(0,2)" :key="tag">#{{ tag }}</i></em></button><p v-if="!filtered.length" class="avatar-empty"><Box :size="25" />没有匹配头像</p></div>
+      <aside v-if="selected"><img v-if="selected.thumbnailImageUrl || selected.imageUrl" :src="mediaUrl(selected.thumbnailImageUrl || selected.imageUrl)" alt="" /><div class="avatar-detail"><span>{{ selected.releaseStatus || '状态未知' }}</span><h3>{{ selected.name }}</h3><small>{{ selected.authorName || selected.authorId }}</small><p>{{ selected.description || '该头像没有公开简介。' }}</p><code>{{ selected.id }}</code><dl><div v-for="(value,key) in selected.performance" :key="key"><dt>{{ key }}</dt><dd>{{ value }}</dd></div></dl><form @submit.prevent="addTag"><Tag :size="14" /><input v-model="tagInput" placeholder="添加本机标签" maxlength="24" /><button>添加</button></form><div class="local-tags"><button v-for="tag in tags[selected.id]" :key="tag" title="点击删除" @click="removeTag(tag)">#{{ tag }} ×</button></div></div></aside>
+      <aside v-else class="avatar-placeholder"><Box :size="28" /><strong>选择一个头像</strong><span>查看详情与整理本机标签。</span></aside>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.avatar-cabinet{padding:0;overflow:hidden}.avatar-cabinet>header{display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px;border-bottom:1px solid var(--line)}header h2{margin:3px 0;font-size:18px}header p{margin:0;color:var(--muted);font-size:9px}header button{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink-soft)}.avatar-error{margin:0;padding:9px 20px;color:var(--danger);background:var(--danger-soft);font-size:9px}.avatar-filters{display:flex;align-items:center;gap:7px;padding:11px 16px;border-bottom:1px solid var(--line);background:var(--surface-muted)}.avatar-filters label{flex:1;display:flex;align-items:center;gap:7px;height:34px;padding:0 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--muted)}.avatar-filters input{width:100%;border:0;outline:0;background:transparent;color:var(--ink);font-size:10px}.avatar-filters select{height:34px;padding:0 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink-soft);font-size:9px}.avatar-filters>span{color:var(--muted);font-size:9px}.avatar-layout{display:grid;grid-template-columns:1fr 310px;min-height:650px}.avatar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));align-content:start;gap:8px;padding:12px;background:var(--surface-muted)}.avatar-grid>button{min-width:0;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);text-align:left}.avatar-grid>button:hover,.avatar-grid>button.active{border-color:var(--accent)}.avatar-grid>button>div{height:118px;position:relative;display:grid;place-items:center;overflow:hidden;border-radius:6px;background:var(--surface-hover);color:var(--muted)}.avatar-grid img{width:100%;height:100%;object-fit:cover}.avatar-grid>button>div span{position:absolute;right:5px;bottom:5px;padding:3px 5px;border-radius:4px;background:rgba(10,13,18,.8);color:#fff;font-size:7px}.avatar-grid strong,.avatar-grid small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.avatar-grid strong{margin:7px 2px 0;font-size:10px}.avatar-grid small{margin:3px 2px 0;color:var(--muted);font-size:8px}.avatar-grid em{height:18px;display:flex;align-items:center;gap:4px;margin:5px 2px 0;color:var(--muted);font-style:normal}.avatar-grid em i{padding:2px 4px;border-radius:3px;background:var(--accent-soft);color:var(--accent);font-size:7px;font-style:normal}.avatar-layout>aside{border-left:1px solid var(--line);background:var(--surface)}.avatar-layout>aside>img{width:100%;height:220px;object-fit:cover;background:var(--surface-muted)}.avatar-detail{padding:16px}.avatar-detail>span{color:var(--accent);font-size:8px;text-transform:uppercase}.avatar-detail h3{margin:4px 0;font-size:18px}.avatar-detail>small{color:var(--muted);font-size:9px}.avatar-detail>p{margin:12px 0;color:var(--ink-soft);font-size:10px;line-height:1.6}.avatar-detail code{display:block;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:8px}.avatar-detail dl{margin:12px 0}.avatar-detail dl div{display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);font-size:8px}.avatar-detail dt{color:var(--muted)}.avatar-detail dd{margin:0}.avatar-detail form{display:flex;align-items:center;gap:6px;padding:6px;border:1px solid var(--line);border-radius:7px}.avatar-detail form input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--ink);font-size:9px}.avatar-detail form button{border:0;background:transparent;color:var(--accent);font-size:9px}.local-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.local-tags button{padding:4px 6px;border:0;border-radius:4px;background:var(--accent-soft);color:var(--accent);font-size:8px}.avatar-placeholder,.avatar-empty{display:flex!important;flex-direction:column;align-items:center;justify-content:center;color:var(--muted)}.avatar-placeholder strong{margin-top:8px;color:var(--ink)}.avatar-placeholder span{margin-top:3px;font-size:8px}.avatar-empty{grid-column:1/-1;min-height:300px;font-size:9px}@media(max-width:850px){.avatar-layout{grid-template-columns:1fr}.avatar-layout>aside{border-left:0;border-top:1px solid var(--line)}.avatar-filters{flex-wrap:wrap}.avatar-filters label{flex-basis:100%}}
+</style>
