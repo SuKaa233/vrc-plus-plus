@@ -24,6 +24,9 @@ AppPublisher=VRC++
 AppSupportURL=mailto:2579362548@qq.com
 DefaultDirName={localappdata}\Programs\VRC++
 DefaultGroupName=VRC++
+DisableDirPage=no
+UsePreviousAppDir=yes
+AlwaysShowDirOnReadyPage=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
@@ -54,7 +57,6 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.i
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式："; Flags: checkedonce
 Name: "startup"; Description: "登录 Windows 后自动启动 VRC++"; GroupDescription: "后台运行："; Flags: unchecked
 
 [Files]
@@ -64,7 +66,7 @@ Source: "..\apps\gateway\internal\tray\icon.ico"; DestDir: "{app}"; DestName: "v
 [Icons]
 Name: "{group}\VRC++"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\vrc-plus-plus.ico"
 Name: "{group}\卸载 VRC++"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\VRC++"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\vrc-plus-plus.ico"; Tasks: desktopicon
+Name: "{autodesktop}\VRC++"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\vrc-plus-plus.ico"
 Name: "{userstartup}\VRC++"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\vrc-plus-plus.ico"; Tasks: startup
 
 [Run]
