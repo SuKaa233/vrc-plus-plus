@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/local/vrc-web-companion/gateway/internal/events"
-	"github.com/local/vrc-web-companion/gateway/internal/model"
-	"github.com/local/vrc-web-companion/gateway/internal/vrchat"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/events"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/vrchat"
 )
 
 type Manager struct {

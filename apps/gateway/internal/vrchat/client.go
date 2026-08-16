@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/local/vrc-web-companion/gateway/internal/model"
-	"github.com/local/vrc-web-companion/gateway/internal/security"
-	"github.com/local/vrc-web-companion/gateway/internal/storage"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/security"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/storage"
 	"golang.org/x/sync/singleflight"
 )
 

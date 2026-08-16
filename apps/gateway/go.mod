@@ -1,4 +1,4 @@
-module github.com/local/vrc-web-companion/gateway
+module github.com/SuKaa233/vrc-plus-plus/apps/gateway
 
 go 1.26.0
 

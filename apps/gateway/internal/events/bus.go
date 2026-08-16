@@ -3,7 +3,7 @@ package events
 import (
 	"sync"
 
-	"github.com/local/vrc-web-companion/gateway/internal/model"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
 )
 
 type Bus struct {

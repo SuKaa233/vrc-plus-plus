@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/local/vrc-web-companion/gateway/internal/model"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
 )
 
 type asset struct {

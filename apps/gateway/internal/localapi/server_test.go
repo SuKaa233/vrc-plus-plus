@@ -10,8 +10,8 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/local/vrc-web-companion/gateway/internal/events"
-	"github.com/local/vrc-web-companion/gateway/internal/pipeline"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/events"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/pipeline"
 )
 
 func newSecurityTestServer(t *testing.T) *Server {

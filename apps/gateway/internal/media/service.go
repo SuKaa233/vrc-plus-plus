@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local/vrc-web-companion/gateway/internal/vrchat"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/vrchat"
 	"golang.org/x/sync/singleflight"
 )
 

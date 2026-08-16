@@ -7,9 +7,11 @@ import (
 	"errors"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	webview "github.com/jchv/go-webview2"
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
 var ErrUnavailable = errors.New("Microsoft Edge WebView2 Runtime is unavailable")
@@ -21,6 +23,8 @@ var (
 )
 
 const swRestore = 9
+
+const webView2ClientID = `{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`
 
 type Manager struct {
 	show chan struct{}
@@ -38,6 +42,9 @@ func (m *Manager) Show() {
 }
 
 func (m *Manager) Run(ctx context.Context, target, dataDirectory string) error {
+	if !webView2RuntimeAvailable() {
+		return ErrUnavailable
+	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -74,6 +81,28 @@ func (m *Manager) Run(ctx context.Context, target, dataDirectory string) error {
 		window.Run()
 		close(windowDone)
 	}
+}
+
+func webView2RuntimeAvailable() bool {
+	paths := []string{
+		`SOFTWARE\Microsoft\EdgeUpdate\Clients\` + webView2ClientID,
+		`SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\` + webView2ClientID,
+	}
+	for _, root := range []registry.Key{registry.CURRENT_USER, registry.LOCAL_MACHINE} {
+		for _, path := range paths {
+			key, err := registry.OpenKey(root, path, registry.QUERY_VALUE)
+			if err != nil {
+				continue
+			}
+			version, _, valueErr := key.GetStringValue("pv")
+			_ = key.Close()
+			version = strings.TrimSpace(version)
+			if valueErr == nil && version != "" && version != "0.0.0.0" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m *Manager) controlWindow(ctx context.Context, window webview.WebView, done <-chan struct{}) {

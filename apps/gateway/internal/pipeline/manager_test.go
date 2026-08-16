@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/local/vrc-web-companion/gateway/internal/events"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/events"
 )
 
 func TestHandleMessageNormalizesStringContent(t *testing.T) {

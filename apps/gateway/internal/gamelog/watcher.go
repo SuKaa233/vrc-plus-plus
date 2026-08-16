@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/local/vrc-web-companion/gateway/internal/events"
-	"github.com/local/vrc-web-companion/gateway/internal/model"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/events"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
 )
 
 var userSuffix = regexp.MustCompile(`^(.*?)\s*\((usr_[^)]+)\)\s*$`)

@@ -56,7 +56,7 @@ scripts/        开发、测试、构建、打包、签名与 UI 检查脚本
 ## 快速开始
 
 ```powershell
-git clone <repository-url>
+git clone https://github.com/SuKaa233/vrc-plus-plus.git
 cd vrc-plus-plus
 npm.cmd --prefix apps/web install
 

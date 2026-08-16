@@ -18,15 +18,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local/vrc-web-companion/gateway/internal/diagnostics"
-	"github.com/local/vrc-web-companion/gateway/internal/events"
-	"github.com/local/vrc-web-companion/gateway/internal/gamelog"
-	"github.com/local/vrc-web-companion/gateway/internal/media"
-	"github.com/local/vrc-web-companion/gateway/internal/model"
-	"github.com/local/vrc-web-companion/gateway/internal/pipeline"
-	"github.com/local/vrc-web-companion/gateway/internal/storage"
-	"github.com/local/vrc-web-companion/gateway/internal/updater"
-	"github.com/local/vrc-web-companion/gateway/internal/vrchat"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/diagnostics"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/events"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/gamelog"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/media"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/pipeline"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/storage"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/updater"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/vrchat"
 )
 
 type Config struct {
