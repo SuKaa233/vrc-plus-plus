@@ -273,6 +273,8 @@ export interface ActivityEvent {
   userId?: string
   displayName?: string
   worldId?: string
+  location?: string
+  locationKind?: 'unknown' | 'offline' | 'traveling' | 'private' | 'friends_plus' | 'friends' | 'invite_plus' | 'group' | 'public' | 'unavailable'
   summary: string
   observedAt: string
 }
@@ -295,9 +297,12 @@ export interface FriendActivityInsights {
   firstObservedAt?: string
   lastMetAt?: string
   sourceCounts: Record<string, number>
+  locationKinds: Record<string, number>
+  privateVisits: number
   activeHours: Array<{ hour: number; count: number }>
   commonWorlds: Array<{ worldId: string; count: number; lastSeenAt: string }>
   timeline: ActivityEvent[]
+  relationChanges: Array<{ peerId: string; displayName?: string; state: 'baseline' | 'newly_observed' | 'not_observed'; observedAt: string }>
   generatedAt: string
 }
 

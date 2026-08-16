@@ -23,6 +23,7 @@ try {
         'ideas-backlog.md',
         'implementation-blueprint.md',
         'implementation-status.md',
+        "release-notes-$releaseVersion.md",
         'vrchat-api-integration.md',
         'windows-release.md'
     )

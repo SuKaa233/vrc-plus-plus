@@ -181,7 +181,7 @@ func TestWorldFavoritesAndSanitizedActivityHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	events, err := store.ListActivityEvents(ctx, 30, 100)
-	if err != nil || len(events) != 1 || events[0].WorldID != "wrld_test" || events[0].Summary != "Alpha 切换了世界" {
+	if err != nil || len(events) != 1 || events[0].WorldID != "wrld_test" || events[0].Location != "wrld_test" || events[0].LocationKind != "private" || events[0].Summary != "Alpha 切换了世界" {
 		t.Fatalf("ListActivityEvents() = %#v, %v", events, err)
 	}
 	encoded, _ := json.Marshal(events)
@@ -194,6 +194,10 @@ func TestWorldFavoritesAndSanitizedActivityHistory(t *testing.T) {
 	}
 	joinedAt := time.Now().Add(-50 * time.Minute)
 	leftAt := time.Now().Add(-20 * time.Minute)
+	locationContent := []byte(`{"location":"wrld_test:123~private(usr_owner)~nonce(secret)"}`)
+	if err := store.RecordDomainEvent(ctx, model.DomainEvent{ID: "evt-location", Type: "game.location", ObservedAt: joinedAt.Add(-time.Minute), Content: locationContent}); err != nil {
+		t.Fatal(err)
+	}
 	player := []byte(`{"userId":"usr_alpha","displayName":"Alpha"}`)
 	if err := store.RecordDomainEvent(ctx, model.DomainEvent{ID: "evt-joined", Type: "game.player-joined", ObservedAt: joinedAt, Content: player}); err != nil {
 		t.Fatal(err)
@@ -201,9 +205,22 @@ func TestWorldFavoritesAndSanitizedActivityHistory(t *testing.T) {
 	if err := store.RecordDomainEvent(ctx, model.DomainEvent{ID: "evt-left", Type: "game.player-left", ObservedAt: leftAt, Content: player}); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.SaveMutualGraph(ctx, "usr_alpha", []string{"usr_beta"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMutualGraph(ctx, "usr_alpha", []string{"usr_beta", "usr_gamma"}, false); err != nil {
+		t.Fatal(err)
+	}
 	friendInsights, err := store.FriendActivityInsights(ctx, "usr_alpha", 30)
-	if err != nil || friendInsights.TotalEvents != 3 || friendInsights.TogetherMinutes != 30 || friendInsights.TogetherSessions != 1 || friendInsights.SourceCounts["gameLog"] != 2 || friendInsights.SourceCounts["pipeline"] != 1 || friendInsights.FirstObservedAt == nil || len(friendInsights.Timeline) != 3 || friendInsights.LastMetAt == nil {
+	if err != nil || friendInsights.TotalEvents != 3 || friendInsights.TogetherMinutes != 30 || friendInsights.TogetherSessions != 1 || friendInsights.SourceCounts["gameLog"] != 2 || friendInsights.SourceCounts["pipeline"] != 1 || friendInsights.LocationKinds["private"] != 3 || friendInsights.PrivateVisits != 1 || friendInsights.FirstObservedAt == nil || len(friendInsights.Timeline) != 3 || len(friendInsights.RelationChanges) != 2 || friendInsights.LastMetAt == nil {
 		t.Fatalf("FriendActivityInsights() = %#v, %v", friendInsights, err)
+	}
+	foundNewRelation := false
+	for _, change := range friendInsights.RelationChanges {
+		foundNewRelation = foundNewRelation || (change.PeerID == "usr_gamma" && change.State == "newly_observed")
+	}
+	if !foundNewRelation {
+		t.Fatalf("RelationChanges() = %#v", friendInsights.RelationChanges)
 	}
 	if err := store.ClearActivityEvents(ctx); err != nil {
 		t.Fatal(err)

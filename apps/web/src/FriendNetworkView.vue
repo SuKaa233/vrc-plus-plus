@@ -15,6 +15,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  ScanSearch,
   ShieldCheck,
   UserPlus,
   X,
@@ -37,6 +38,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   startScan: []
+  scanAll: []
   scanFriends: [userIDs: string[]]
   stopScan: []
   openFriend: [userID: string]
@@ -639,8 +641,9 @@ function addPicked(scan: boolean) {
           <CircleStop :size="16" />停止扫描
         </button>
         <button v-else class="scan-button" type="button" :disabled="scanEstimate === 0" @click="emit('startScan')">
-          <Play :size="16" />扫描<span v-if="scanEstimate">{{ scanEstimate }} 位</span>
+          <Play :size="16" />默认扫描<span v-if="scanEstimate">{{ scanEstimate }} 位</span>
         </button>
+        <button v-if="!scanning" class="scan-all-button" type="button" :disabled="!(network?.totalFriends)" @click="emit('scanAll')"><ScanSearch :size="16" />一键扫描全部</button>
       </div>
     </header>
 
@@ -651,6 +654,7 @@ function addPicked(scan: boolean) {
       <span v-if="scanEstimate" class="scan-estimate">下次扫描 {{ scanEstimate }} 位</span>
       <span v-else class="scan-estimate">已是最新</span>
     </div>
+    <div class="network-coverage-tip"><ShieldCheck :size="15" /><span>默认扫描最多 100 位好友；好友不足 100 位时会扫描全部。想体验完整好友关系、朋友圈和变化追踪，建议使用“一键扫描全部”。</span></div>
 
     <div v-if="scanning || scanMessage" class="scan-progress" :class="{ active: scanning }">
       <span>{{ scanMessage || '正在读取共同好友关系' }}</span>
@@ -803,7 +807,7 @@ function addPicked(scan: boolean) {
 
     <footer class="network-boundary">
       <ShieldCheck :size="16" />
-      <span>关系快照只保存在本机 SQLite 中，不上传、不公开。扫描是串行且可停止的；一次最多读取 20 位好友。</span>
+      <span>关系快照和变化记录只保存在本机 SQLite 中，不上传、不公开。扫描串行执行且可随时停止；VRChat 限流时会提前结束。</span>
     </footer>
   </article>
 </template>
@@ -817,6 +821,7 @@ function addPicked(scan: boolean) {
 .secondary-action{border:1px solid var(--line-strong);color:var(--ink-soft);background:var(--surface)}.secondary-action:hover{background:var(--surface-hover);color:var(--ink)}
 .scan-button{border:1px solid var(--accent);color:#fff;background:var(--accent)}.scan-button span{padding-left:7px;border-left:1px solid rgba(255,255,255,.28);font-weight:500}.scan-button.stop{border-color:var(--danger);background:var(--danger)}.scan-button:disabled{opacity:.48;cursor:not-allowed}
 .network-summary-row{min-height:42px;display:flex;align-items:center;gap:20px;padding:0 20px;border-bottom:1px solid var(--line);color:var(--muted);font-size:11px}.network-summary-row b{color:var(--ink);font-size:12px}.scan-estimate{margin-left:auto;text-align:right}
+.network-coverage-tip{padding:9px 20px;border-bottom:1px solid var(--line);background:var(--accent-soft);color:var(--ink-soft);font-size:9px;line-height:1.55;display:flex;align-items:flex-start;gap:7px}.network-coverage-tip svg{flex:none;color:var(--accent)}.scan-all-button{color:var(--accent)!important;border-color:color-mix(in srgb,var(--accent) 35%,var(--line))!important}
 .scan-progress{display:grid;grid-template-columns:1fr auto;gap:6px 14px;padding:9px 20px;border-bottom:1px solid var(--line);color:var(--ink-soft);background:var(--surface-muted);font-size:12px}.scan-progress>div{grid-column:1/-1;height:2px;overflow:hidden;background:var(--line)}.scan-progress i{display:block;height:100%;background:var(--accent);transition:width .2s}
 .community-strip{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface)}.community-strip-heading{display:flex;align-items:center;gap:9px;margin-bottom:8px}.community-strip-heading strong{font-size:11px}.community-strip-heading span{color:var(--muted);font-size:9px}.community-list{display:flex;gap:7px;overflow-x:auto;padding-bottom:3px}.community-item{flex:none;display:grid;grid-template-columns:4px minmax(250px,300px) auto;align-items:stretch;gap:5px;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--surface-muted)}.community-item.active{border-color:var(--accent);background:var(--accent-soft)}.community-item.collapsed{opacity:.58}.community-item>i{width:4px;border-radius:3px}.community-main{height:44px;display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;padding:0 8px;border:0;border-radius:5px;color:var(--ink);background:transparent;text-align:left;cursor:pointer}.community-main:hover{background:var(--surface-hover)}.community-avatar,.community-avatar img{width:32px;height:32px;border-radius:50%}.community-avatar{display:grid;place-items:center;overflow:hidden;color:var(--accent);background:var(--accent-soft)}.community-avatar img{object-fit:cover}.community-avatar b{font-size:11px}.community-copy{min-width:0}.community-copy strong,.community-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.community-copy strong{font-size:10px}.community-copy small{margin-top:3px;color:var(--muted);font-size:8px}.community-main em{padding:3px 5px;border-radius:4px;color:var(--muted);background:var(--surface);font-size:8px;font-style:normal}.community-collapse{align-self:center;height:28px;padding:0 7px;border:1px solid var(--line);border-radius:5px;color:var(--muted);background:var(--surface);font-size:9px;cursor:pointer}.community-collapse:hover{color:var(--ink);border-color:var(--line-strong)}
 .network-toolbar{display:flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface-muted)}

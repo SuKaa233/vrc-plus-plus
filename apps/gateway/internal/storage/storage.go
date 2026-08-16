@@ -92,6 +92,15 @@ func (s *Store) migrate(ctx context.Context) error {
 			PRIMARY KEY(friend_id, mutual_id),
 			FOREIGN KEY(friend_id) REFERENCES mutual_graph_friend(friend_id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS mutual_graph_observation (
+			observation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+			friend_id TEXT NOT NULL,
+			mutual_id TEXT NOT NULL,
+			state TEXT NOT NULL,
+			observed_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_mutual_graph_observation_friend ON mutual_graph_observation(friend_id, observed_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_mutual_graph_observation_mutual ON mutual_graph_observation(mutual_id, observed_at DESC)`,
 		`CREATE TABLE IF NOT EXISTS friend_annotation (
 			user_id TEXT PRIMARY KEY,
 			note TEXT NOT NULL DEFAULT '',
@@ -123,6 +132,12 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("apply database migration: %w", err)
 		}
 	}
+	if err := s.ensureColumn(ctx, "activity_event", "location", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "activity_event", "location_kind", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT OR IGNORE INTO schema_migration(version, applied_at) VALUES(1, ?)`,
 		time.Now().UTC().Format(time.RFC3339Nano),
@@ -148,6 +163,42 @@ func (s *Store) migrate(ctx context.Context) error {
 		`INSERT OR IGNORE INTO schema_migration(version, applied_at) VALUES(4, ?)`,
 		time.Now().UTC().Format(time.RFC3339Nano),
 	)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO schema_migration(version, applied_at) VALUES(5, ?)`,
+		time.Now().UTC().Format(time.RFC3339Nano),
+	)
+	return err
+}
+
+func (s *Store) ensureColumn(ctx context.Context, table, column, definition string) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == column {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` `+definition)
 	return err
 }
 
@@ -211,18 +262,56 @@ func (s *Store) RecordDomainEvent(ctx context.Context, event model.DomainEvent) 
 	if strings.HasPrefix(location, "wrld_") {
 		worldID = strings.SplitN(location, ":", 2)[0]
 	}
-	summary := activitySummary(event.Type, displayName)
 	if event.ObservedAt.IsZero() {
 		event.ObservedAt = time.Now().UTC()
 	}
+	locationKind := classifyLocation(location)
+	if strings.HasPrefix(event.Type, "game.player-") && location == "" {
+		_ = s.db.QueryRowContext(ctx, `
+			SELECT world_id, location, location_kind FROM activity_event
+			WHERE event_type = 'game.location' AND observed_at <= ? AND observed_at >= ?
+			ORDER BY observed_at DESC LIMIT 1`, event.ObservedAt.UTC().Format(time.RFC3339Nano), event.ObservedAt.UTC().Add(-12*time.Hour).Format(time.RFC3339Nano)).Scan(&worldID, &location, &locationKind)
+	}
+	sanitizedLocation := ""
+	if worldID != "" {
+		sanitizedLocation = worldID
+	} else if location == "private" || location == "offline" || location == "traveling" {
+		sanitizedLocation = location
+	}
+	summary := activitySummary(event.Type, displayName)
 	_, err := s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO activity_event(event_id, event_type, user_id, display_name, world_id, summary, observed_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?)`, event.ID, event.Type, userID, displayName, worldID, summary, event.ObservedAt.UTC().Format(time.RFC3339Nano))
+		INSERT OR IGNORE INTO activity_event(event_id, event_type, user_id, display_name, world_id, location, location_kind, summary, observed_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.ID, event.Type, userID, displayName, worldID, sanitizedLocation, locationKind, summary, event.ObservedAt.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `DELETE FROM activity_event WHERE observed_at < ?`, time.Now().UTC().Add(-30*24*time.Hour).Format(time.RFC3339Nano))
 	return err
+}
+
+func classifyLocation(location string) string {
+	switch {
+	case location == "":
+		return "unknown"
+	case location == "offline":
+		return "offline"
+	case location == "traveling":
+		return "traveling"
+	case location == "private" || strings.Contains(location, "~private("):
+		return "private"
+	case strings.Contains(location, "~friends+("):
+		return "friends_plus"
+	case strings.Contains(location, "~friends("):
+		return "friends"
+	case strings.Contains(location, "~hidden("):
+		return "invite_plus"
+	case strings.Contains(location, "~group("):
+		return "group"
+	case strings.HasPrefix(location, "wrld_"):
+		return "public"
+	default:
+		return "unavailable"
+	}
 }
 
 func activitySummary(eventType, displayName string) string {
@@ -264,7 +353,7 @@ func (s *Store) ListActivityEvents(ctx context.Context, days, limit int) ([]mode
 		limit = 100
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT event_id, event_type, user_id, display_name, world_id, summary, observed_at
+		SELECT event_id, event_type, user_id, display_name, world_id, location, location_kind, summary, observed_at
 		FROM activity_event WHERE observed_at >= ? ORDER BY observed_at DESC LIMIT ?`,
 		time.Now().UTC().Add(-time.Duration(days)*24*time.Hour).Format(time.RFC3339Nano), limit)
 	if err != nil {
@@ -275,7 +364,7 @@ func (s *Store) ListActivityEvents(ctx context.Context, days, limit int) ([]mode
 	for rows.Next() {
 		var item model.ActivityEvent
 		var observedAt string
-		if err := rows.Scan(&item.ID, &item.Type, &item.UserID, &item.DisplayName, &item.WorldID, &item.Summary, &observedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Type, &item.UserID, &item.DisplayName, &item.WorldID, &item.Location, &item.LocationKind, &item.Summary, &observedAt); err != nil {
 			return nil, err
 		}
 		item.ObservedAt, err = time.Parse(time.RFC3339Nano, observedAt)
@@ -384,7 +473,7 @@ func (s *Store) FriendActivityInsights(ctx context.Context, userID string, days 
 		days = 30
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT event_id, event_type, user_id, display_name, world_id, summary, observed_at
+		SELECT event_id, event_type, user_id, display_name, world_id, location, location_kind, summary, observed_at
 		FROM activity_event WHERE user_id = ? AND observed_at >= ?
 		ORDER BY observed_at ASC LIMIT 1000`, userID,
 		time.Now().UTC().Add(-time.Duration(days)*24*time.Hour).Format(time.RFC3339Nano))
@@ -396,7 +485,7 @@ func (s *Store) FriendActivityInsights(ctx context.Context, userID string, days 
 	for rows.Next() {
 		var item model.ActivityEvent
 		var observedAt string
-		if err := rows.Scan(&item.ID, &item.Type, &item.UserID, &item.DisplayName, &item.WorldID, &item.Summary, &observedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Type, &item.UserID, &item.DisplayName, &item.WorldID, &item.Location, &item.LocationKind, &item.Summary, &observedAt); err != nil {
 			return model.FriendActivityInsights{}, err
 		}
 		item.ObservedAt, err = time.Parse(time.RFC3339Nano, observedAt)
@@ -409,7 +498,7 @@ func (s *Store) FriendActivityInsights(ctx context.Context, userID string, days 
 		return model.FriendActivityInsights{}, err
 	}
 
-	result := model.FriendActivityInsights{UserID: userID, TotalEvents: len(events), SourceCounts: map[string]int{}, GeneratedAt: time.Now().UTC()}
+	result := model.FriendActivityInsights{UserID: userID, TotalEvents: len(events), SourceCounts: map[string]int{}, LocationKinds: map[string]int{}, GeneratedAt: time.Now().UTC()}
 	dates := map[string]bool{}
 	hours := map[int]int{}
 	worlds := map[string]*model.FriendActivityWorld{}
@@ -427,6 +516,10 @@ func (s *Store) FriendActivityInsights(ctx context.Context, userID string, days 
 			source = "gameLog"
 		}
 		result.SourceCounts[source]++
+		result.LocationKinds[event.LocationKind]++
+		if event.LocationKind == "private" && strings.Contains(event.Type, "friend-location") {
+			result.PrivateVisits++
+		}
 		if event.WorldID != "" {
 			item := worlds[event.WorldID]
 			if item == nil {
@@ -482,8 +575,34 @@ func (s *Store) FriendActivityInsights(ctx context.Context, userID string, days 
 	if len(result.CommonWorlds) > 5 {
 		result.CommonWorlds = result.CommonWorlds[:5]
 	}
-	for index := len(events) - 1; index >= 0 && len(result.Timeline) < 20; index-- {
+	for index := len(events) - 1; index >= 0 && len(result.Timeline) < 500; index-- {
 		result.Timeline = append(result.Timeline, events[index])
+	}
+	friendNames := s.friendNames(ctx)
+	relationRows, relationErr := s.db.QueryContext(ctx, `
+		SELECT friend_id, mutual_id, state, observed_at
+		FROM mutual_graph_observation
+		WHERE friend_id = ? OR mutual_id = ?
+		ORDER BY observed_at DESC LIMIT 200`, userID, userID)
+	if relationErr == nil {
+		defer relationRows.Close()
+		for relationRows.Next() {
+			var friendID, mutualID, state, observedAt string
+			if relationRows.Scan(&friendID, &mutualID, &state, &observedAt) != nil {
+				continue
+			}
+			peerID := mutualID
+			if peerID == userID {
+				peerID = friendID
+			}
+			observed, parseErr := time.Parse(time.RFC3339Nano, observedAt)
+			if parseErr != nil {
+				continue
+			}
+			result.RelationChanges = append(result.RelationChanges, model.FriendRelationObservation{
+				PeerID: peerID, DisplayName: friendNames[peerID], State: state, ObservedAt: observed,
+			})
+		}
 	}
 	if result.ActiveHours == nil {
 		result.ActiveHours = []model.FriendActivityHour{}
@@ -494,7 +613,26 @@ func (s *Store) FriendActivityInsights(ctx context.Context, userID string, days 
 	if result.Timeline == nil {
 		result.Timeline = []model.ActivityEvent{}
 	}
+	if result.RelationChanges == nil {
+		result.RelationChanges = []model.FriendRelationObservation{}
+	}
 	return result, nil
+}
+
+func (s *Store) friendNames(ctx context.Context) map[string]string {
+	result := map[string]string{}
+	entry, err := s.LoadCache(ctx, "friends:v1")
+	if err != nil {
+		return result
+	}
+	var friends []model.Friend
+	if json.Unmarshal(entry.Payload, &friends) != nil {
+		return result
+	}
+	for _, friend := range friends {
+		result[friend.ID] = friend.DisplayName
+	}
+	return result
 }
 
 func (s *Store) ClearActivityEvents(ctx context.Context) error {
@@ -594,6 +732,32 @@ func (s *Store) SaveMutualGraph(ctx context.Context, friendID string, mutualIDs 
 		return err
 	}
 	defer tx.Rollback()
+	var previousScanCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM mutual_graph_friend WHERE friend_id = ?`, friendID).Scan(&previousScanCount); err != nil {
+		return err
+	}
+	previous := map[string]bool{}
+	previousRows, err := tx.QueryContext(ctx, `SELECT mutual_id FROM mutual_graph_edge WHERE friend_id = ?`, friendID)
+	if err != nil {
+		return err
+	}
+	for previousRows.Next() {
+		var mutualID string
+		if err := previousRows.Scan(&mutualID); err != nil {
+			previousRows.Close()
+			return err
+		}
+		previous[mutualID] = true
+	}
+	if err := previousRows.Close(); err != nil {
+		return err
+	}
+	next := map[string]bool{}
+	for _, mutualID := range mutualIDs {
+		if mutualID != "" && mutualID != friendID {
+			next[mutualID] = true
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO mutual_graph_friend(friend_id, fetched_at, opted_out)
 		VALUES(?, ?, ?)
@@ -605,16 +769,40 @@ func (s *Store) SaveMutualGraph(ctx context.Context, friendID string, mutualIDs 
 		return err
 	}
 	if !optedOut {
-		for _, mutualID := range mutualIDs {
-			if mutualID == "" || mutualID == friendID {
-				continue
-			}
+		for mutualID := range next {
 			if _, err := tx.ExecContext(ctx, `
 				INSERT OR IGNORE INTO mutual_graph_edge(friend_id, mutual_id, observed_at) VALUES(?, ?, ?)`,
 				friendID, mutualID, now); err != nil {
 				return err
 			}
 		}
+	}
+	if !optedOut {
+		for mutualID := range next {
+			state := "baseline"
+			if previousScanCount > 0 {
+				if previous[mutualID] {
+					continue
+				}
+				state = "newly_observed"
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO mutual_graph_observation(friend_id, mutual_id, state, observed_at) VALUES(?, ?, ?, ?)`, friendID, mutualID, state, now); err != nil {
+				return err
+			}
+		}
+		if previousScanCount > 0 {
+			for mutualID := range previous {
+				if next[mutualID] {
+					continue
+				}
+				if _, err := tx.ExecContext(ctx, `INSERT INTO mutual_graph_observation(friend_id, mutual_id, state, observed_at) VALUES(?, ?, 'not_observed', ?)`, friendID, mutualID, now); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM mutual_graph_observation WHERE observed_at < ?`, time.Now().UTC().Add(-90*24*time.Hour).Format(time.RFC3339Nano)); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

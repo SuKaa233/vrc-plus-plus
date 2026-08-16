@@ -32,6 +32,7 @@ import {
   Users,
   Globe2,
   History,
+  Heart,
   WifiOff,
   X,
 } from '@lucide/vue'
@@ -72,6 +73,7 @@ import DiscoveryView from './DiscoveryView.vue'
 import FriendDetailDrawer from './FriendDetailDrawer.vue'
 import FriendListView from './FriendListView.vue'
 import FriendNetworkView from './FriendNetworkView.vue'
+import ConcernedFriendView from './ConcernedFriendView.vue'
 import NetworkEvolution from './NetworkEvolution.vue'
 import GroupCenter from './GroupCenter.vue'
 import AvatarCabinet from './AvatarCabinet.vue'
@@ -105,7 +107,7 @@ const worlds = ref<DataEnvelope<World> | null>(null)
 const realtime = ref<RealtimeStatus>({ state: 'disabled', reconnects: 0 })
 const dataLoading = ref(false)
 const worldSearch = ref('')
-type View = 'overview' | 'compass' | 'journey' | 'friends' | 'discovery' | 'worlds' | 'groups' | 'avatars' | 'network' | 'activity' | 'notifications'
+type View = 'overview' | 'compass' | 'journey' | 'friends' | 'focus' | 'discovery' | 'worlds' | 'groups' | 'avatars' | 'network' | 'activity' | 'notifications'
 const activeView = ref<View>('overview')
 const settingsOpen = ref(false)
 const displaySettingsOpen = ref(false)
@@ -224,6 +226,7 @@ const viewCopy = computed(() => (locale.value === 'en' ? {
   compass: ['Compass', 'Where to tonight', 'Worlds that fit your current friends.'],
   journey: ['Journey', 'Friend motion and trails', 'See recent movement and circle intersections.'],
   friends: ['Friends', 'Friend activity', 'Find, filter and review friends.'],
+  focus: ['Watchlist', 'Concerned friend dossier', 'Public profile, local evidence, worlds and observed relationships.'],
   discovery: ['Discover', 'Discover people', 'Search users and recent encounters.'],
   network: ['Network', 'Friend network', 'Explore circles and mutual links.'],
   worlds: ['Worlds', 'Worlds and instances', 'Discover worlds you can join.'],
@@ -236,6 +239,7 @@ const viewCopy = computed(() => (locale.value === 'en' ? {
   compass: ['罗盘', '今晚去哪', '看看适合加入的世界。'],
   journey: ['旅程', '好友动向与足迹', '看见圈层交汇与最近去向。'],
   friends: ['好友', '好友动态', '找人、筛选和查看近况。'],
+  focus: ['特别关心', '好友全景档案', '公开资料、本机证据、世界足迹与已观察关系。'],
   discovery: ['发现', '发现好友', '搜索用户和最近遇见的人。'],
   network: ['关系网', '好友关系网', '看看好友圈与共同连接。'],
   worlds: ['世界', '世界与实例', '发现世界与可加入实例。'],
@@ -310,9 +314,9 @@ async function saveNetwork() {
 
 function selectView(view: View) {
   activeView.value = view
-  if (view === 'network' || view === 'journey') void loadFriendNetwork()
+  if (view === 'network' || view === 'journey' || view === 'focus') void loadFriendNetwork()
   if (view === 'journey') void refreshSystemCenter()
-  if (view === 'activity' || view === 'discovery') void loadActivity()
+  if (view === 'activity' || view === 'discovery' || view === 'focus') void loadActivity()
   if (view === 'notifications') void loadNotifications()
 }
 
@@ -343,7 +347,7 @@ async function loadFriendNetwork() {
   }
 }
 
-function networkScanCandidates(requestedIDs: string[] = []) {
+function networkScanCandidates(requestedIDs: string[] = [], limit = 100, includeFresh = false) {
   const nodes = friendNetwork.value?.nodes ?? []
   const nodeByID = new Map(nodes.map((node) => [node.id, node]))
   const requested = new Set(requestedIDs)
@@ -351,6 +355,7 @@ function networkScanCandidates(requestedIDs: string[] = []) {
   const staleBefore = Date.now() - 7 * 24 * 60 * 60 * 1000
   return [...(friends.value?.items ?? [])].filter((friend) => {
     if (hasRequested) return requested.has(friend.id)
+    if (includeFresh) return true
     const node = nodeByID.get(friend.id)
     if (!node?.scanned || !node.scannedAt) return true
     return new Date(node.scannedAt).getTime() < staleBefore
@@ -361,14 +366,14 @@ function networkScanCandidates(requestedIDs: string[] = []) {
     if (leftNode?.scanned !== rightNode?.scanned) return leftNode?.scanned ? 1 : -1
     if (left.online !== right.online) return left.online ? -1 : 1
     return (leftNode?.scannedAt ?? '').localeCompare(rightNode?.scannedAt ?? '')
-  }).slice(0, 20)
+  }).slice(0, limit)
 }
 
 const networkScanEstimate = computed(() => networkScanCandidates().length)
 
-async function startNetworkScan(requestedIDs: string[] = []) {
+async function startNetworkScan(requestedIDs: string[] = [], scanAll = false) {
   if (networkScanning.value) return
-  const candidates = networkScanCandidates(requestedIDs)
+  const candidates = networkScanCandidates(requestedIDs, scanAll ? Number.MAX_SAFE_INTEGER : 100, scanAll)
   if (!candidates.length) {
     networkScanMessage.value = requestedIDs.length ? '没有找到可扫描的所选好友' : '没有需要更新的节点：已扫描数据均在 7 天有效期内'
     return
@@ -380,7 +385,9 @@ async function startNetworkScan(requestedIDs: string[] = []) {
   networkScanTotal.value = candidates.length
   networkScanMessage.value = requestedIDs.length
     ? `正在扫描手动选择的 ${candidates.length} 位好友`
-    : `本次将观察 ${candidates.length} 位好友；新连线数量以返回结果为准`
+    : scanAll
+      ? `完整扫描将串行观察全部 ${candidates.length} 位好友，可随时停止`
+      : `默认扫描 ${candidates.length} 位好友（不足 100 位则扫描全部）；新连线数量以返回结果为准`
   try {
     for (const friend of candidates) {
       if (networkScanCancelled) break
@@ -1083,7 +1090,7 @@ onBeforeUnmount(() => {
     <template v-else>
       <aside class="sidebar">
         <div class="sidebar-brand"><span class="brand-mark"><img :src="'/assets/vrc-plus-plus-mark.png'" alt="" /></span><div><strong>VRC++</strong><small>{{ bootstrap?.version }}</small></div></div>
-        <nav><button :class="{ active: activeView === 'overview' }" @click="selectView('overview')"><Gauge :size="19" /> {{ l('总览','Overview') }}</button><button :class="{ active: activeView === 'compass' }" @click="selectView('compass')"><Sparkles :size="19" /> {{ l('罗盘','Compass') }}</button><button :class="{ active: activeView === 'journey' }" @click="selectView('journey')"><Route :size="19" /> {{ l('旅程','Journey') }}</button><button :class="{ active: activeView === 'friends' }" @click="selectView('friends')"><Users :size="19" /> {{ l('好友','Friends') }}<span>{{ onlineFriends }}</span></button><button :class="{ active: activeView === 'discovery' }" @click="selectView('discovery')"><Compass :size="19" /> {{ l('发现','Discover') }}</button><button :class="{ active: activeView === 'network' }" @click="selectView('network')"><Network :size="19" /> {{ l('关系网','Network') }}</button><button :class="{ active: activeView === 'worlds' }" @click="selectView('worlds')"><Globe2 :size="19" /> {{ l('世界','Worlds') }}</button><button :class="{ active: activeView === 'groups' }" @click="selectView('groups')"><Building2 :size="19" /> {{ l('群组','Groups') }}</button><button :class="{ active: activeView === 'avatars' }" @click="selectView('avatars')"><Box :size="19" /> {{ l('头像','Avatars') }}</button><button :class="{ active: activeView === 'activity' }" @click="selectView('activity')"><History :size="19" /> {{ l('历史','History') }}</button><button :class="{ active: activeView === 'notifications' }" @click="selectView('notifications')"><Bell :size="19" /> {{ l('通知','Notifications') }}<span v-if="unreadNotifications">{{ unreadNotifications }}</span></button></nav>
+        <nav><button :class="{ active: activeView === 'overview' }" @click="selectView('overview')"><Gauge :size="19" /> {{ l('总览','Overview') }}</button><button :class="{ active: activeView === 'compass' }" @click="selectView('compass')"><Sparkles :size="19" /> {{ l('罗盘','Compass') }}</button><button :class="{ active: activeView === 'journey' }" @click="selectView('journey')"><Route :size="19" /> {{ l('旅程','Journey') }}</button><button :class="{ active: activeView === 'friends' }" @click="selectView('friends')"><Users :size="19" /> {{ l('好友','Friends') }}<span>{{ onlineFriends }}</span></button><button :class="{ active: activeView === 'focus' }" @click="selectView('focus')"><Heart :size="19" /> {{ l('特别关心','Watchlist') }}</button><button :class="{ active: activeView === 'discovery' }" @click="selectView('discovery')"><Compass :size="19" /> {{ l('发现','Discover') }}</button><button :class="{ active: activeView === 'network' }" @click="selectView('network')"><Network :size="19" /> {{ l('关系网','Network') }}</button><button :class="{ active: activeView === 'worlds' }" @click="selectView('worlds')"><Globe2 :size="19" /> {{ l('世界','Worlds') }}</button><button :class="{ active: activeView === 'groups' }" @click="selectView('groups')"><Building2 :size="19" /> {{ l('群组','Groups') }}</button><button :class="{ active: activeView === 'avatars' }" @click="selectView('avatars')"><Box :size="19" /> {{ l('头像','Avatars') }}</button><button :class="{ active: activeView === 'activity' }" @click="selectView('activity')"><History :size="19" /> {{ l('历史','History') }}</button><button :class="{ active: activeView === 'notifications' }" @click="selectView('notifications')"><Bell :size="19" /> {{ l('通知','Notifications') }}<span v-if="unreadNotifications">{{ unreadNotifications }}</span></button></nav>
         <div class="sidebar-bottom"><button @click="toggleTheme"><Sun v-if="theme === 'dark'" :size="18" /><Moon v-else :size="18" /> {{ theme === 'dark' ? l('浅色模式','Light theme') : l('深色模式','Dark theme') }}</button><button @click="toggleLocale"><Languages :size="18" /> {{ locale === 'zh-CN' ? 'English' : '简体中文' }}</button><button @click="displaySettingsOpen = true"><ALargeSmall :size="18" /> {{ l('字体大小','Text size') }} <span>{{ Math.round(uiScale*100) }}%</span></button><button @click="settingsOpen = true"><Settings2 :size="18" /> {{ l('网络与缓存','Network & cache') }}</button><div class="sidebar-user"><button class="sidebar-user-main" :title="l('查看和编辑我的资料','View and edit my profile')" @click="openSelfProfile"><img v-if="userImage()" :src="userImage()" alt="" /><span v-else class="mini-avatar">{{ session.user?.displayName?.slice(0, 1) }}</span><span><strong>{{ session.user?.displayName }}</strong><small>{{ realtimeLabel }}</small></span></button><button :title="l('退出','Sign out')" @click="logout"><LogOut :size="17" /></button></div></div>
       </aside>
       <main class="console-main">
@@ -1095,8 +1102,9 @@ onBeforeUnmount(() => {
           <JourneyView v-if="activeView === 'journey'" :friends="friends?.items ?? []" :worlds="visibleWorlds" :events="activityEvents" :network="friendNetwork" :diagnostics="diagnostics" :realtime="realtime" :network-state="network" :cache="cacheStats" :storage-key="session.user?.id ?? 'default'" :media-url="api.mediaUrl.bind(api)" :locale="locale" @open-friend="openNetworkFriend" @open-world="openCompassWorld" @load-network="loadFriendNetwork" @refresh-system="refreshSystemCenter" @hydrate-worlds="hydrateVisibleWorlds" />
           <RecentAccess v-if="activeView === 'overview'" :items="recentAccess" :media-url="api.mediaUrl.bind(api)" @open="openRecent" />
           <NetworkEvolution v-if="activeView === 'network'" :network="friendNetwork" :storage-key="session.user?.id ?? 'default'" />
-          <FriendNetworkView v-if="activeView === 'network'" :network="friendNetwork" :scanning="networkScanning" :scan-processed="networkScanProcessed" :scan-total="networkScanTotal" :scan-estimate="networkScanEstimate" :scan-message="networkScanMessage" :media-url="api.mediaUrl.bind(api)" :layout-key="session.user?.id ?? 'default'" :annotations="annotations" @start-scan="startNetworkScan" @scan-friends="startNetworkScan" @stop-scan="stopNetworkScan" @open-friend="openNetworkFriend" />
+          <FriendNetworkView v-if="activeView === 'network'" :network="friendNetwork" :scanning="networkScanning" :scan-processed="networkScanProcessed" :scan-total="networkScanTotal" :scan-estimate="networkScanEstimate" :scan-message="networkScanMessage" :media-url="api.mediaUrl.bind(api)" :layout-key="session.user?.id ?? 'default'" :annotations="annotations" @start-scan="startNetworkScan" @scan-all="startNetworkScan([], true)" @scan-friends="startNetworkScan" @stop-scan="stopNetworkScan" @open-friend="openNetworkFriend" />
           <FriendListView v-if="activeView === 'friends'" :friends="friends?.items ?? []" :annotations="annotations" :media-url="api.mediaUrl.bind(api)" :storage-key="session.user?.id ?? 'default'" :source="friends?.source ?? 'live'" :message="friends?.message" @open-friend="openFriend" />
+          <ConcernedFriendView v-if="activeView === 'focus'" :friends="friends?.items ?? []" :network="friendNetwork" :events="activityEvents" :worlds="visibleWorlds" :storage-key="session.user?.id ?? 'default'" :media-url="api.mediaUrl.bind(api)" @open-friend="openNetworkFriend" @open-world="openCompassWorld" @network-updated="loadFriendNetwork" />
           <DiscoveryView v-if="activeView === 'discovery'" :friends="friends?.items ?? []" :events="activityEvents" :results="discoveryResults" :statuses="discoveryStatuses" :loading="discoveryLoading" :acting-id="friendRequestActingID" :media-url="api.mediaUrl.bind(api)" @search="searchDiscoveryUsers" @open="openDiscoveryUser" @request="sendUserFriendRequest" />
           <ActivityView v-if="activeView === 'activity'" class="wide-view" :events="activityEvents" :insights="activityInsights" :friends="friends?.items ?? []" :loading="activityLoading" :media-url="api.mediaUrl.bind(api)" @refresh="loadActivity" @clear="clearActivity" @select-user="selectActivityUser" />
           <NotificationCenter v-if="activeView === 'notifications'" class="wide-view" :items="notifications" :loading="notificationsLoading" :acting-id="notificationActingID" @refresh="loadNotifications" @action="actOnNotification" @open-world="openNotificationWorld" />
