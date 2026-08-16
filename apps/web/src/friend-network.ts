@@ -104,6 +104,11 @@ export function selectNetworkRenderEdges(
   return [...selected.values()]
 }
 
+export function expandNetworkAvatarBudget(current: number, total: number, initial = 72, batch = 16) {
+  if (total <= 0) return 0
+  return Math.min(total, Math.max(initial, current) + Math.max(1, batch))
+}
+
 export function detectNetworkCommunities(nodes: Array<{ id: string }>, edges: FriendNetworkEdge[]) {
   const ids = new Set(nodes.map((node) => node.id))
   const adjacency = new Map<string, string[]>(nodes.map((node) => [node.id, []]))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, findShortestNetworkPath, layoutFriendNetwork, rankBridgeNodes, resolveNodeCollisions, selectCommunityTheme, selectNetworkRenderEdges, summarizeNetworkDelta, toggleElementFullscreen, zoomAroundPoint } from './friend-network'
+import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, expandNetworkAvatarBudget, findShortestNetworkPath, layoutFriendNetwork, rankBridgeNodes, resolveNodeCollisions, selectCommunityTheme, selectNetworkRenderEdges, summarizeNetworkDelta, toggleElementFullscreen, zoomAroundPoint } from './friend-network'
 
 describe('layoutFriendNetwork', () => {
   it('lays out nodes deterministically and calculates graph metadata', () => {
@@ -102,6 +102,13 @@ describe('layoutFriendNetwork', () => {
     expect(positioned).toHaveLength(520)
     expect(positioned.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y))).toBe(true)
     expect(performance.now() - started).toBeLessThan(3000)
+  })
+
+  it('progressively expands the avatar budget until every friend can load', () => {
+    let budget = 72
+    for (let step = 0; step < 40; step += 1) budget = expandNetworkAvatarBudget(budget, 520)
+    expect(budget).toBe(520)
+    expect(expandNetworkAvatarBudget(72, 60)).toBe(60)
   })
 
   it('reports the actual nodes and edges added by a scan', () => {
