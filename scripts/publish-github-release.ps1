@@ -35,18 +35,28 @@ if (Test-Path -LiteralPath $releaseNotes) {
 }
 if ($Draft) { $releaseArgs += '--draft' }
 if ($version.Contains('-')) { $releaseArgs += '--prerelease' }
-& $gh @releaseArgs
-if ($LASTEXITCODE -ne 0) {
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& $gh release view $tag --repo $Repository *> $null
+$releaseExists = $LASTEXITCODE -eq 0
+$ErrorActionPreference = $previousErrorActionPreference
+if ($releaseExists) {
     & $gh release upload $tag $installer $manifest --repo $Repository --clobber
-    if ($LASTEXITCODE -ne 0) { throw "Could not create or update release $tag." }
+} else {
+    & $gh @releaseArgs
 }
+if ($LASTEXITCODE -ne 0) { throw "Could not create or update release $tag." }
 
 if ($version.Contains('-')) {
-    & $gh release view update-beta --repo $Repository 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        & $gh release create update-beta $manifest --repo $Repository --title 'VRC++ Beta Update Channel' --notes 'This rolling release stores the Beta update manifest.' --prerelease
-    } else {
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $gh release view update-beta --repo $Repository *> $null
+    $betaChannelExists = $LASTEXITCODE -eq 0
+    $ErrorActionPreference = $previousErrorActionPreference
+    if ($betaChannelExists) {
         & $gh release upload update-beta $manifest --repo $Repository --clobber
+    } else {
+        & $gh release create update-beta $manifest --repo $Repository --title 'VRC++ Beta Update Channel' --notes 'This rolling release stores the Beta update manifest.' --prerelease
     }
     if ($LASTEXITCODE -ne 0) { throw 'Could not update the Beta channel manifest.' }
 } else {
