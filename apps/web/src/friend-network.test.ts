@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, findShortestNetworkPath, layoutFriendNetwork, rankBridgeNodes, resolveNodeCollisions, selectCommunityTheme, summarizeNetworkDelta, toggleElementFullscreen, zoomAroundPoint } from './friend-network'
+import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, findShortestNetworkPath, layoutFriendNetwork, rankBridgeNodes, resolveNodeCollisions, selectCommunityTheme, selectNetworkRenderEdges, summarizeNetworkDelta, toggleElementFullscreen, zoomAroundPoint } from './friend-network'
 
 describe('layoutFriendNetwork', () => {
   it('lays out nodes deterministically and calculates graph metadata', () => {
@@ -76,6 +76,32 @@ describe('layoutFriendNetwork', () => {
         expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(a.radius + b.radius + 6)
       }
     }
+  })
+
+  it('keeps a 520-friend graph responsive while retaining complete focus relationships', () => {
+    const nodes = Array.from({ length: 520 }, (_, index) => ({
+      id: `friend-${index}`,
+      displayName: `Friend ${index}`,
+      online: false,
+      scanned: true,
+      optedOut: false,
+    }))
+    const edges = Array.from({ length: 12000 }, (_, index) => ({
+      source: `friend-${index % nodes.length}`,
+      target: `friend-${(index * 17 + Math.floor(index / nodes.length) + 1) % nodes.length}`,
+    })).filter((edge) => edge.source !== edge.target)
+    const focusedID = 'friend-0'
+    const focusedEdges = edges.filter((edge) => edge.source === focusedID || edge.target === focusedID)
+    const rendered = selectNetworkRenderEdges(edges, 1040, focusedID)
+    const renderedKeys = new Set(rendered.map((edge) => [edge.source, edge.target].sort().join('|')))
+
+    expect(rendered.length).toBeLessThanOrEqual(1040)
+    expect(focusedEdges.every((edge) => renderedKeys.has([edge.source, edge.target].sort().join('|')))).toBe(true)
+    const started = performance.now()
+    const positioned = layoutFriendNetwork(nodes, edges, 1800, 1120)
+    expect(positioned).toHaveLength(520)
+    expect(positioned.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y))).toBe(true)
+    expect(performance.now() - started).toBeLessThan(3000)
   })
 
   it('reports the actual nodes and edges added by a scan', () => {

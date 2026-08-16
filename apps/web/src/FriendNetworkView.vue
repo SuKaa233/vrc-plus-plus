@@ -21,7 +21,7 @@ import {
   X,
 } from '@lucide/vue'
 import type { FriendAnnotation, FriendNetwork, FriendNetworkNode } from './api'
-import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, findShortestNetworkPath, layoutFriendNetwork, networkEdgeKey, rankBridgeNodes, selectCommunityTheme, toggleElementFullscreen, zoomAroundPoint, type FriendNetworkSnapshot } from './friend-network'
+import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, findShortestNetworkPath, layoutFriendNetwork, networkEdgeKey, rankBridgeNodes, selectCommunityTheme, selectNetworkRenderEdges, toggleElementFullscreen, zoomAroundPoint, type FriendNetworkSnapshot } from './friend-network'
 import { preferredFriendAvatar } from './media'
 
 const props = defineProps<{
@@ -52,6 +52,7 @@ const selectedCommunity = ref<number | null>(null)
 const collapsedCommunities = ref<Set<number>>(new Set())
 const tagFilter = ref('')
 const crossCommunityOnly = ref(false)
+const edgeRenderMode = ref<'smart' | 'all'>('smart')
 const evolutionOpen = ref(false)
 const snapshots = ref<FriendNetworkSnapshot[]>([])
 const snapshotIndex = ref(0)
@@ -75,9 +76,6 @@ const panX = ref(0)
 const panY = ref(0)
 const manualPositions = ref<Record<string, { x: number; y: number }>>({})
 const avatarFailures = ref<Set<string>>(new Set())
-const graphAvatars = ref<Record<string, string>>({})
-const graphAvatarFailures = new Set<string>()
-const graphAvatarPending = new Set<string>()
 const interaction = ref<null | {
   mode: 'pan' | 'node'
   pointerID: number
@@ -186,6 +184,8 @@ const visibleNodes = computed(() => {
 const visibleIDs = computed(() => new Set(visibleNodes.value.map((node) => node.id)))
 const structuralEdges = computed(() => (props.network?.edges ?? []).filter((edge) => visibleIDs.value.has(edge.source) && visibleIDs.value.has(edge.target)))
 const visibleEdges = computed(() => structuralEdges.value.filter((edge) => !crossCommunityOnly.value || communityByID.value.get(edge.source) !== communityByID.value.get(edge.target)))
+const largeGraph = computed(() => visibleNodes.value.length > 220 || visibleEdges.value.length > 1800)
+const edgeBudget = computed(() => Math.max(700, Math.min(1400, visibleNodes.value.length * 2)))
 const graphSize = computed(() => {
   const count = visibleNodes.value.length
   const width = Math.max(1080, Math.min(1800, 900 + count * 4.8))
@@ -220,13 +220,35 @@ const positioned = computed(() => interaction.value?.mode === 'node'
     ))
 
 const positions = computed(() => new Map(positioned.value.map((node) => [node.id, node])))
-const focusedID = computed(() => hoveredID.value || selectedID.value)
+// Selection keeps a visible ring only. Dimming the graph is strictly transient;
+// otherwise returning from a friend profile leaves a seemingly permanent mask.
+const focusedID = computed(() => hoveredID.value)
 const focusIndex = computed(() => buildNetworkFocusIndex(visibleEdges.value))
 const pathIDs = computed(() => new Set(path.value))
 const pathEdgeKeys = computed(() => new Set(path.value.slice(1).map((id, index) => {
   const source = path.value[index]
   return networkEdgeKey({ source, target: id })
 })))
+const renderedEdges = computed(() => {
+  if (!largeGraph.value || edgeRenderMode.value === 'all') return visibleEdges.value
+  return selectNetworkRenderEdges(visibleEdges.value, edgeBudget.value, focusedID.value, pathEdgeKeys.value)
+})
+const avatarEligibleIDs = computed(() => {
+  if (!largeGraph.value) return visibleIDs.value
+  const result = new Set<string>([...pinnedIDs.value, ...pathIDs.value])
+  if (focusedID.value) {
+    result.add(focusedID.value)
+    const neighbors = [...(focusIndex.value.get(focusedID.value)?.neighbors ?? [])]
+      .sort((left, right) => (degrees.value.get(right) ?? 0) - (degrees.value.get(left) ?? 0))
+      .slice(0, 24)
+    neighbors.forEach((id) => result.add(id))
+  }
+  ;[...visibleNodes.value]
+    .sort((left, right) => (degrees.value.get(right.id) ?? 0) - (degrees.value.get(left.id) ?? 0) || left.id.localeCompare(right.id))
+    .slice(0, 72)
+    .forEach((node) => result.add(node.id))
+  return result
+})
 const ambientLabelIDs = computed(() => {
   const count = visibleNodes.value.length <= 24 ? visibleNodes.value.length : visibleNodes.value.length <= 80 ? 16 : zoom.value >= 1.6 ? 24 : 10
   return new Set([...visibleNodes.value]
@@ -250,14 +272,12 @@ const pickerCandidates = computed(() => {
 watch(() => props.layoutKey, (key) => {
   layoutLoaded.value = false
   manualPositions.value = {}
-  graphAvatars.value = {}
-  graphAvatarFailures.clear()
-  graphAvatarPending.clear()
   pinnedIDs.value = new Set()
   collapsedCommunities.value = new Set()
   selectedCommunity.value = null
   tagFilter.value = ''
   crossCommunityOnly.value = false
+  edgeRenderMode.value = 'smart'
   zoom.value = 1
   panX.value = 0
   panY.value = 0
@@ -374,7 +394,11 @@ function rebuildEdgeElementIndex() {
   applyPathHighlights()
 }
 
-watch([visibleEdges, visibleNodes], () => { void nextTick(rebuildEdgeElementIndex) })
+watch([renderedEdges, visibleNodes], () => { void nextTick(rebuildEdgeElementIndex) })
+watch(visibleIDs, (ids) => {
+  if (hoveredID.value && !ids.has(hoveredID.value)) clearTransientFocus()
+  if (selectedID.value && !ids.has(selectedID.value)) selectedID.value = ''
+})
 watch(focusedID, (userID) => {
   applyEdgeHighlights(userID)
   applyNodeHighlights(userID)
@@ -383,10 +407,14 @@ watch(pathEdgeKeys, () => { void nextTick(applyPathHighlights) })
 
 onMounted(() => {
   document.addEventListener('fullscreenchange', syncFullscreen)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('blur', clearTransientFocus)
   void nextTick(rebuildEdgeElementIndex)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', syncFullscreen)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('blur', clearTransientFocus)
   window.clearTimeout(layoutSaveTimer)
   window.clearTimeout(hoverClearTimer)
   window.clearTimeout(hoverSwitchTimer)
@@ -430,6 +458,12 @@ function clearPath() {
   pathMessage.value = ''
 }
 
+function toggleEdgeRenderMode() {
+  if (edgeRenderMode.value === 'smart' && visibleEdges.value.length > 5000
+    && !window.confirm(`将同时绘制 ${visibleEdges.value.length} 条连线，可能降低操作流畅度。仍要继续吗？`)) return
+  edgeRenderMode.value = edgeRenderMode.value === 'smart' ? 'all' : 'smart'
+}
+
 function selectNode(userID: string) {
   if (suppressClickID === userID) return
   selectedID.value = userID
@@ -442,46 +476,7 @@ function avatarURL(node: FriendNetworkNode) {
 }
 
 function graphAvatarURL(node: FriendNetworkNode) {
-  const cached = graphAvatars.value[node.id]
-  if (cached) return cached
-  const source = avatarURL(node)
-  if (!source) return ''
-  if (graphAvatarFailures.has(node.id)) return source
-  if (!graphAvatarPending.has(node.id)) {
-    graphAvatarPending.add(node.id)
-    const image = new Image()
-    image.decoding = 'async'
-    image.onload = () => {
-      try {
-        const size = 96
-        const canvas = document.createElement('canvas')
-        canvas.width = size
-        canvas.height = size
-        const context = canvas.getContext('2d')
-        if (!context) throw new Error('canvas unavailable')
-        const scale = Math.max(size / image.naturalWidth, size / image.naturalHeight)
-        const width = image.naturalWidth * scale
-        const height = image.naturalHeight * scale
-        context.beginPath()
-        context.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2)
-        context.clip()
-        context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height)
-        graphAvatars.value = { ...graphAvatars.value, [node.id]: canvas.toDataURL('image/webp', .88) }
-      } catch {
-        graphAvatarFailures.add(node.id)
-        graphAvatars.value = { ...graphAvatars.value, [node.id]: source }
-      } finally {
-        graphAvatarPending.delete(node.id)
-      }
-    }
-    image.onerror = () => {
-      graphAvatarPending.delete(node.id)
-      graphAvatarFailures.add(node.id)
-      markAvatarFailed(node.id)
-    }
-    image.src = source
-  }
-  return ''
+  return avatarEligibleIDs.value.has(node.id) ? avatarURL(node) : ''
 }
 
 function enterNode(userID: string) {
@@ -495,6 +490,17 @@ function enterNode(userID: string) {
   hoverSwitchTimer = window.setTimeout(() => {
     if (hoverCandidateID === userID) hoveredID.value = userID
   }, 45)
+}
+
+function clearTransientFocus() {
+  window.clearTimeout(hoverClearTimer)
+  window.clearTimeout(hoverSwitchTimer)
+  hoverCandidateID = ''
+  hoveredID.value = ''
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) clearTransientFocus()
 }
 
 function leaveNode(userID: string) {
@@ -520,6 +526,7 @@ function setZoom(nextZoom: number, anchorX = graphSize.value.width / 2, anchorY 
 }
 
 function handleWheel(event: WheelEvent) {
+  clearTransientFocus()
   const rect = svgRef.value?.getBoundingClientRect()
   if (!rect) return
   const anchorX = (event.clientX - rect.left) / rect.width * graphSize.value.width
@@ -542,6 +549,7 @@ async function toggleFullscreen() {
 
 function beginPan(event: PointerEvent) {
   if (event.button !== 0 || (event.target as Element).closest('.graph-node, .graph-controls, .friend-picker')) return
+  clearTransientFocus()
   svgRef.value?.setPointerCapture(event.pointerId)
   interaction.value = {
     mode: 'pan', pointerID: event.pointerId, startClientX: event.clientX, startClientY: event.clientY,
@@ -693,8 +701,16 @@ function addPicked(scan: boolean) {
       </button>
       <select v-model="tagFilter" aria-label="按本机标签筛选"><option value="">全部标签</option><option v-for="tag in tagOptions" :key="tag" :value="tag"># {{ tag }}</option></select>
       <button :class="{ active: crossCommunityOnly }" :aria-pressed="crossCommunityOnly" @click="crossCommunityOnly = !crossCommunityOnly">跨圈连接</button>
+      <button v-if="largeGraph" :class="{ active: edgeRenderMode === 'all' }" :aria-pressed="edgeRenderMode === 'all'" @click="toggleEdgeRenderMode">
+        {{ edgeRenderMode === 'smart' ? '显示全部连线' : '恢复流畅模式' }}
+      </button>
       <button :class="{ active: evolutionOpen }" :aria-pressed="evolutionOpen" @click="evolutionOpen = !evolutionOpen"><History :size="15" />变化</button>
       <span class="visible-count">{{ visibleNodes.length }} / {{ network?.nodes.length ?? 0 }}</span>
+    </div>
+
+    <div v-if="largeGraph && edgeRenderMode === 'smart'" class="graph-performance-note">
+      <ShieldCheck :size="14" />
+      <span><b>大图流畅模式</b>：完整保留 {{ visibleEdges.length }} 条关系用于搜索、寻路和统计；画布当前绘制 {{ renderedEdges.length }} 条代表连线、优先加载重点头像。悬停好友会补充其直接关系。</span>
     </div>
 
     <section v-if="evolutionOpen" class="evolution-panel">
@@ -726,7 +742,7 @@ function addPicked(scan: boolean) {
     </div>
 
     <div class="network-workspace">
-      <div v-if="positioned.length" class="graph-stage" :class="{ dragging: interaction, focused: focusedID }">
+      <div v-if="positioned.length" class="graph-stage" :class="{ dragging: interaction, focused: focusedID }" @pointerleave="clearTransientFocus">
         <div class="graph-controls" aria-label="关系图视图控制">
           <button type="button" title="缩小" aria-label="缩小关系网" @click="setZoom(zoom / 1.25)"><Minus :size="16" /></button>
           <span>{{ Math.round(zoom * 100) }}%</span>
@@ -741,7 +757,7 @@ function addPicked(scan: boolean) {
           @wheel.prevent="handleWheel" @pointerdown="beginPan" @pointermove="movePointer"
           @pointerup="endPointer" @pointercancel="endPointer">
           <g class="graph-viewport" :transform="`translate(${panX} ${panY}) scale(${zoom})`">
-            <line v-for="edge in visibleEdges" :key="`${edge.source}-${edge.target}`" class="network-edge" :data-edge-key="networkEdgeKey(edge)"
+            <line v-for="edge in renderedEdges" :key="`${edge.source}-${edge.target}`" class="network-edge" :data-edge-key="networkEdgeKey(edge)"
               :x1="positions.get(edge.source)?.x" :y1="positions.get(edge.source)?.y"
               :x2="positions.get(edge.target)?.x" :y2="positions.get(edge.target)?.y"
             />
@@ -826,13 +842,14 @@ function addPicked(scan: boolean) {
 .community-strip{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface)}.community-strip-heading{display:flex;align-items:center;gap:9px;margin-bottom:8px}.community-strip-heading strong{font-size:11px}.community-strip-heading span{color:var(--muted);font-size:9px}.community-list{display:flex;gap:7px;overflow-x:auto;padding-bottom:3px}.community-item{flex:none;display:grid;grid-template-columns:4px minmax(250px,300px) auto;align-items:stretch;gap:5px;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--surface-muted)}.community-item.active{border-color:var(--accent);background:var(--accent-soft)}.community-item.collapsed{opacity:.58}.community-item>i{width:4px;border-radius:3px}.community-main{height:44px;display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;padding:0 8px;border:0;border-radius:5px;color:var(--ink);background:transparent;text-align:left;cursor:pointer}.community-main:hover{background:var(--surface-hover)}.community-avatar,.community-avatar img{width:32px;height:32px;border-radius:50%}.community-avatar{display:grid;place-items:center;overflow:hidden;color:var(--accent);background:var(--accent-soft)}.community-avatar img{object-fit:cover}.community-avatar b{font-size:11px}.community-copy{min-width:0}.community-copy strong,.community-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.community-copy strong{font-size:10px}.community-copy small{margin-top:3px;color:var(--muted);font-size:8px}.community-main em{padding:3px 5px;border-radius:4px;color:var(--muted);background:var(--surface);font-size:8px;font-style:normal}.community-collapse{align-self:center;height:28px;padding:0 7px;border:1px solid var(--line);border-radius:5px;color:var(--muted);background:var(--surface);font-size:9px;cursor:pointer}.community-collapse:hover{color:var(--ink);border-color:var(--line-strong)}
 .network-toolbar{display:flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface-muted)}
 .network-search{width:min(360px,32vw);display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid var(--line-strong);border-radius:6px;color:var(--muted);background:var(--surface)}.network-search input{width:100%;height:34px;border:0;outline:0;color:var(--ink);background:transparent;font-size:12px}
-.network-toolbar>button,.network-toolbar>select{height:34px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--line);border-radius:6px;color:var(--ink-soft);background:var(--surface);font-size:11px;cursor:pointer}.network-toolbar>button:hover{border-color:var(--line-strong);color:var(--ink)}.network-toolbar>button.active{border-color:color-mix(in srgb,var(--accent) 42%,var(--line));color:var(--accent);background:var(--accent-soft)}.visible-count{margin-left:auto;color:var(--muted);font-size:11px}
+.network-toolbar>button,.network-toolbar>select{height:34px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--line);border-radius:6px;color:var(--ink-soft);background:var(--surface);font-size:11px;cursor:pointer}.network-toolbar>button:hover{border-color:var(--line-strong);color:var(--ink)}.network-toolbar>button.active{border-color:color-mix(in srgb,var(--accent) 42%,var(--line));color:var(--accent);background:var(--accent-soft)}.visible-count{margin-left:auto;color:var(--muted);font-size:11px}.graph-performance-note{display:flex;align-items:flex-start;gap:7px;padding:8px 12px;border-bottom:1px solid var(--line);color:var(--muted);background:var(--accent-soft);font-size:9px;line-height:1.5}.graph-performance-note svg{flex:none;color:var(--accent)}.graph-performance-note b{color:var(--ink-soft)}
 .evolution-panel{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface-muted)}.evolution-block{min-width:0;padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}.evolution-block header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.evolution-block header strong{font-size:10px}.evolution-block header span{color:var(--muted);font-size:8px}.evolution-block>select,.circle-compare select{width:100%;height:30px;padding:0 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface-muted);color:var(--ink-soft);font-size:9px}.delta-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:7px}.delta-grid span{padding:6px;border-radius:5px;background:var(--surface-muted);color:var(--muted);font-size:8px}.delta-grid b{color:var(--ink);font-size:10px}.bridge-list{display:grid;grid-template-columns:1fr 1fr;gap:4px}.bridge-list button{min-width:0;padding:6px;border:0;border-radius:5px;background:var(--surface-muted);color:var(--ink);text-align:left;cursor:pointer}.bridge-list strong,.bridge-list small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bridge-list strong{font-size:9px}.bridge-list small{margin-top:2px;color:var(--muted);font-size:7px}.bridge-list p,.circle-compare p{margin:9px 0 0;color:var(--muted);font-size:8px}.circle-compare>div{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:5px}.circle-compare>div>span{color:var(--muted);font-size:8px}.evolution-note{grid-column:1/-1;color:var(--muted);font-size:8px}
 .path-toolbar{display:flex;align-items:center;gap:7px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface)}.path-toolbar strong{font-size:10px}.path-toolbar span,.path-toolbar small{color:var(--muted);font-size:9px}.path-toolbar select{min-width:150px;height:30px;padding:0 7px;border:1px solid var(--line);border-radius:5px;color:var(--ink-soft);background:var(--surface-muted);font-size:10px}.path-toolbar button{height:30px;padding:0 8px;border:1px solid var(--line-strong);border-radius:5px;color:var(--ink-soft);background:var(--surface);font-size:10px;cursor:pointer}.path-toolbar button:disabled{opacity:.45}.path-toolbar small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .network-workspace{position:relative}.graph-stage{position:relative;height:min(68vh,760px);min-height:560px;overflow:hidden;background:var(--surface-muted)}.graph-stage>svg{width:100%;height:100%;touch-action:none;cursor:grab;user-select:none}.graph-stage.dragging>svg{cursor:grabbing}
 .graph-controls{position:absolute;z-index:3;top:12px;right:12px;display:flex;align-items:center;padding:3px;border:1px solid var(--line);border-radius:7px;background:color-mix(in srgb,var(--surface) 94%,transparent);box-shadow:0 2px 8px rgba(0,0,0,.08)}.graph-controls button{width:32px;height:32px;display:grid;place-items:center;padding:0;border:0;border-radius:5px;color:var(--ink-soft);background:transparent;cursor:pointer}.graph-controls button:hover{color:var(--ink);background:var(--surface-hover)}.graph-controls span{min-width:48px;text-align:center;color:var(--muted);font-size:11px}
 .graph-hint{position:absolute;z-index:2;left:12px;bottom:12px;display:flex;align-items:center;gap:6px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;color:var(--muted);background:color-mix(in srgb,var(--surface) 92%,transparent);font-size:11px;pointer-events:none}
 line{stroke:var(--line-strong);stroke-width:1.1;opacity:.2;vector-effect:non-scaling-stroke}.network-edge{pointer-events:none}.graph-stage.focused line{opacity:.055}.graph-stage.focused line.highlighted{stroke:var(--accent);stroke-width:1.9;opacity:.95}.graph-stage line.path-edge{stroke:var(--warning);stroke-width:2.5;opacity:1}.graph-node{cursor:pointer;outline:none;touch-action:none}.node-hit-target{fill:transparent;pointer-events:all}.node-focus-halo{fill:var(--accent);opacity:0;pointer-events:none}.graph-node.related .node-focus-halo{opacity:.13}.graph-node.hovered .node-focus-halo,.graph-node.selected .node-focus-halo{opacity:.28}.node-ring{fill:var(--surface);stroke:var(--line-strong);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}.node-body{stroke:var(--surface);stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:none}.graph-node.related .node-ring{stroke:color-mix(in srgb,var(--accent) 72%,var(--line-strong));stroke-width:2.4}.graph-node.path-node .node-ring{stroke:var(--warning);stroke-width:3}.graph-node.unscanned .node-ring{stroke-dasharray:3 3}.graph-node.opted .node-body{fill:var(--surface-muted)!important}.graph-node.hovered .node-ring,.graph-node.selected .node-ring{stroke:var(--accent);stroke-width:3.5}.graph-node.pinned .node-ring{stroke:var(--warning)}.online-mark{fill:var(--success);stroke:var(--surface);stroke-width:2;pointer-events:none}.graph-node text{fill:var(--ink);font-size:11px;font-weight:650;text-anchor:middle;paint-order:stroke;stroke:var(--surface-muted);stroke-width:4px;stroke-linejoin:round;pointer-events:none}.graph-node.hovered .node-label{fill:var(--accent);font-weight:800}.node-avatar,.node-label{pointer-events:none}.node-label{display:none}.graph-stage:not(.focused) .graph-node.ambient-label .node-label,.graph-node.related-label .node-label{display:block}.node-initial{fill:#fff!important;stroke:none!important;font-size:11px!important;font-weight:750;dominant-baseline:middle}.graph-node.unscanned .node-initial,.graph-node.opted .node-initial{fill:var(--ink-soft)!important}.graph-viewport{transform-box:view-box;transform-origin:0 0}
+.node-avatar{clip-path:circle(50%)}
 .network-empty{height:min(68vh,760px);min-height:560px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--muted);background:var(--surface-muted)}.network-empty strong{margin-top:12px;color:var(--ink)}.network-empty p{max-width:460px;margin:7px 20px 0;font-size:12px;line-height:1.6}
 .friend-picker{position:absolute;z-index:5;top:12px;right:12px;width:min(380px,calc(100% - 24px));max-height:calc(100% - 24px);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);box-shadow:0 12px 36px rgba(0,0,0,.2)}
 .picker-heading{display:flex;align-items:flex-start;justify-content:space-between;padding:14px;border-bottom:1px solid var(--line)}.picker-heading strong,.picker-heading small{display:block}.picker-heading strong{font-size:13px}.picker-heading small{margin-top:3px;color:var(--muted);font-size:10px}.picker-heading button{width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:5px;color:var(--muted);background:transparent;cursor:pointer}.picker-heading button:hover{background:var(--surface-hover);color:var(--ink)}

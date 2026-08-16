@@ -46,6 +46,64 @@ export function buildNetworkFocusIndex(edges: FriendNetworkEdge[]) {
   return result
 }
 
+/**
+ * Keep the full graph available for search and analysis while selecting a small,
+ * deterministic visual backbone for SVG rendering and force layout.
+ */
+export function selectNetworkRenderEdges(
+  edges: FriendNetworkEdge[], maxEdges: number, focusedID = '', requiredKeys = new Set<string>(),
+) {
+  const unique = new Map<string, FriendNetworkEdge>()
+  const degrees = new Map<string, number>()
+  for (const edge of edges) {
+    if (!edge.source || !edge.target || edge.source === edge.target) continue
+    const key = networkEdgeKey(edge)
+    if (unique.has(key)) continue
+    unique.set(key, edge)
+    degrees.set(edge.source, (degrees.get(edge.source) ?? 0) + 1)
+    degrees.set(edge.target, (degrees.get(edge.target) ?? 0) + 1)
+  }
+  const all = [...unique.entries()]
+  if (all.length <= maxEdges && !focusedID && !requiredKeys.size) return all.map(([, edge]) => edge)
+
+  const score = ([key, edge]: [string, FriendNetworkEdge]) => ({
+    key,
+    edge,
+    score: (degrees.get(edge.source) ?? 0) + (degrees.get(edge.target) ?? 0),
+  })
+  const ordered = all.map(score).sort((left, right) => right.score - left.score || left.key.localeCompare(right.key))
+  const selected = new Map<string, FriendNetworkEdge>()
+  for (const item of ordered) {
+    if (requiredKeys.has(item.key) || (focusedID && (item.edge.source === focusedID || item.edge.target === focusedID))) {
+      selected.set(item.key, item.edge)
+    }
+  }
+
+  // Add a maximum spanning forest first so low-degree branches do not disappear.
+  const parent = new Map<string, string>()
+  const find = (id: string): string => {
+    const current = parent.get(id)
+    if (!current) { parent.set(id, id); return id }
+    if (current === id) return id
+    const root = find(current)
+    parent.set(id, root)
+    return root
+  }
+  for (const item of ordered) {
+    if (selected.size >= maxEdges) break
+    const sourceRoot = find(item.edge.source)
+    const targetRoot = find(item.edge.target)
+    if (sourceRoot === targetRoot) continue
+    parent.set(targetRoot, sourceRoot)
+    selected.set(item.key, item.edge)
+  }
+  for (const item of ordered) {
+    if (selected.size >= maxEdges) break
+    selected.set(item.key, item.edge)
+  }
+  return [...selected.values()]
+}
+
 export function detectNetworkCommunities(nodes: Array<{ id: string }>, edges: FriendNetworkEdge[]) {
   const ids = new Set(nodes.map((node) => node.id))
   const adjacency = new Map<string, string[]>(nodes.map((node) => [node.id, []]))
@@ -228,34 +286,52 @@ export function resolveNodeCollisions<T extends { id: string; x: number; y: numb
   const result = nodes.map((node) => ({ ...node }))
   for (let pass = 0; pass < iterations; pass += 1) {
     let adjusted = false
+    const maximumRadius = result.reduce((maximum, node) => Math.max(maximum, node.radius), 1)
+    const cellSize = Math.max(1, maximumRadius * 2 + gap)
+    const buckets = new Map<string, number[]>()
+    result.forEach((node, index) => {
+      const cellX = Math.floor(node.x / cellSize)
+      const cellY = Math.floor(node.y / cellSize)
+      const key = `${cellX}:${cellY}`
+      const bucket = buckets.get(key) ?? []
+      bucket.push(index)
+      buckets.set(key, bucket)
+    })
     for (let left = 0; left < result.length; left += 1) {
-      for (let right = left + 1; right < result.length; right += 1) {
-        const a = result[left]
-        const b = result[right]
-        let dx = b.x - a.x
-        let dy = b.y - a.y
-        let distance = Math.sqrt(dx * dx + dy * dy)
-        const minimum = a.radius + b.radius + gap
-        if (distance >= minimum) continue
-        if (distance < .001) {
-          const angle = ((hash(a.id + b.id) % 360) / 180) * Math.PI
-          dx = Math.cos(angle)
-          dy = Math.sin(angle)
-          distance = 1
+      const a = result[left]
+      const cellX = Math.floor(a.x / cellSize)
+      const cellY = Math.floor(a.y / cellSize)
+      for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+        for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+          for (const right of buckets.get(`${cellX + offsetX}:${cellY + offsetY}`) ?? []) {
+            if (right <= left) continue
+            const b = result[right]
+            let dx = b.x - a.x
+            let dy = b.y - a.y
+            let distance = Math.sqrt(dx * dx + dy * dy)
+            const minimum = a.radius + b.radius + gap
+            if (distance >= minimum) continue
+            if (distance < .001) {
+              const angle = ((hash(a.id + b.id) % 360) / 180) * Math.PI
+              dx = Math.cos(angle)
+              dy = Math.sin(angle)
+              distance = 1
+            }
+            const correction = (minimum - distance) * 1.02
+            const unitX = dx / distance
+            const unitY = dy / distance
+            const aFixed = fixedIDs.has(a.id)
+            const bFixed = fixedIDs.has(b.id)
+            if (aFixed && bFixed) continue
+            const aShare = aFixed ? 0 : bFixed ? 1 : .5
+            const bShare = bFixed ? 0 : aFixed ? 1 : .5
+            a.x -= unitX * correction * aShare
+            a.y -= unitY * correction * aShare
+            b.x += unitX * correction * bShare
+            b.y += unitY * correction * bShare
+            adjusted = true
+          }
         }
-        const correction = (minimum - distance) * 1.02
-        const unitX = dx / distance
-        const unitY = dy / distance
-        const aFixed = fixedIDs.has(a.id)
-        const bFixed = fixedIDs.has(b.id)
-        if (aFixed && bFixed) continue
-        const aShare = aFixed ? 0 : bFixed ? 1 : .5
-        const bShare = bFixed ? 0 : aFixed ? 1 : .5
-        a.x -= unitX * correction * aShare
-        a.y -= unitY * correction * aShare
-        b.x += unitX * correction * bShare
-        b.y += unitY * correction * bShare
-        adjusted = true
       }
     }
     for (const node of result) {
@@ -284,7 +360,7 @@ export function applyManualNetworkPositions<T extends { id: string; x: number; y
     }
   })
   if (fixedIDs.size === nodes.length) return merged
-  return resolveNodeCollisions(merged, width, height, gap, 42, 18, fixedIDs)
+  return resolveNodeCollisions(merged, width, height, gap, nodes.length > 220 ? 12 : 42, 18, fixedIDs)
 }
 
 function hash(value: string) {
@@ -345,10 +421,12 @@ export function layoutFriendNetwork(nodes: FriendNetworkNode[], edges: FriendNet
     }
   })
   const byID = new Map(positions.map((node) => [node.id, node]))
+  const forceEdges = selectNetworkRenderEdges(validEdges, Math.max(600, nodes.length * 6))
   const idealEdgeDistance = Math.min(240, 120 + Math.sqrt(nodes.length) * 8)
   const repulsionStrength = 5200 + Math.min(3600, nodes.length * 18)
-  for (let iteration = 0; iteration < 120; iteration += 1) {
-    const cooling = 1 - iteration / 132
+  const forceIterations = nodes.length > 220 ? 28 : 120
+  for (let iteration = 0; iteration < forceIterations; iteration += 1) {
+    const cooling = 1 - iteration / (forceIterations * 1.1)
     for (let left = 0; left < positions.length; left += 1) {
       for (let right = left + 1; right < positions.length; right += 1) {
         const a = positions[left]
@@ -364,7 +442,7 @@ export function layoutFriendNetwork(nodes: FriendNetworkNode[], edges: FriendNet
         b.vy += (dy / distance) * force
       }
     }
-    validEdges.forEach((edge) => {
+    forceEdges.forEach((edge) => {
       const a = byID.get(edge.source)
       const b = byID.get(edge.target)
       if (!a || !b) return
@@ -399,5 +477,5 @@ export function layoutFriendNetwork(nodes: FriendNetworkNode[], edges: FriendNet
     y: padding + ((node.y - minY) / rangeY) * (height - padding * 2),
   }))
   const collisionGap = Math.min(26, 15 + Math.sqrt(nodes.length) * .55)
-  return resolveNodeCollisions(normalized, width, height, collisionGap, 48)
+  return resolveNodeCollisions(normalized, width, height, collisionGap, nodes.length > 220 ? 24 : 48)
 }
