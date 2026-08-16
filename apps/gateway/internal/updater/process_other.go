@@ -3,15 +3,11 @@
 package updater
 
 import (
-	"os"
+	"errors"
 	"syscall"
 )
 
 func hiddenProcessAttributes() *syscall.SysProcAttr { return nil }
-func processExists(pid int) bool {
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return process.Signal(syscall.Signal(0)) == nil
+func verifyInstaller(string) error {
+	return errors.New("当前系统不支持 Windows 安装程序更新")
 }

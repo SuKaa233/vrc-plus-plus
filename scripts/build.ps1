@@ -6,6 +6,10 @@ $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
 $goExe = Join-Path $workspace '.tools\go\bin\go.exe'
 $releaseVersion = (Get-Content -LiteralPath (Join-Path $workspace 'package.json') -Raw | ConvertFrom-Json).version
+$releaseUpdateUrls = $env:VRC_PLUS_PLUS_UPDATE_URLS
+if ($releaseUpdateUrls -match '\s') {
+    throw 'VRC_PLUS_PLUS_UPDATE_URLS cannot contain whitespace. Separate multiple URLs with semicolons.'
+}
 
 if (-not (Test-Path -LiteralPath $goExe)) {
     throw 'Project Go toolchain is missing. See docs/development.md.'
@@ -14,6 +18,7 @@ if (-not (Test-Path -LiteralPath $goExe)) {
 Push-Location $workspace
 try {
     $embeddedDocs = @(
+        'code-signing.md',
         'feature-roadmap.md',
         'ideas-backlog.md',
         'implementation-blueprint.md',
@@ -43,7 +48,9 @@ try {
     New-Item -ItemType Directory -Path 'dist' -Force | Out-Null
     Push-Location 'apps\gateway'
     try {
-        & $goExe build -trimpath -ldflags="-H windowsgui -s -w -X main.version=$releaseVersion" -o '..\..\dist\vrc-plus-plus.exe' '.\cmd\gateway'
+        $linkerFlags = "-H windowsgui -s -w -X main.version=$releaseVersion"
+        if ($releaseUpdateUrls) { $linkerFlags += " -X main.defaultUpdateURLs=$releaseUpdateUrls" }
+        & $goExe build -trimpath '-ldflags' $linkerFlags -o '..\..\dist\vrc-plus-plus.exe' '.\cmd\gateway'
         if ($LASTEXITCODE -ne 0) { throw 'Gateway build failed.' }
     } finally {
         Pop-Location

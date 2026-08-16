@@ -409,15 +409,24 @@ func (s *Store) FriendActivityInsights(ctx context.Context, userID string, days 
 		return model.FriendActivityInsights{}, err
 	}
 
-	result := model.FriendActivityInsights{UserID: userID, TotalEvents: len(events), GeneratedAt: time.Now().UTC()}
+	result := model.FriendActivityInsights{UserID: userID, TotalEvents: len(events), SourceCounts: map[string]int{}, GeneratedAt: time.Now().UTC()}
 	dates := map[string]bool{}
 	hours := map[int]int{}
 	worlds := map[string]*model.FriendActivityWorld{}
 	var joinedAt *time.Time
 	for _, event := range events {
+		if result.FirstObservedAt == nil {
+			observed := event.ObservedAt
+			result.FirstObservedAt = &observed
+		}
 		local := event.ObservedAt.In(time.Local)
 		dates[local.Format("2006-01-02")] = true
 		hours[local.Hour()]++
+		source := "pipeline"
+		if strings.HasPrefix(event.Type, "game.") {
+			source = "gameLog"
+		}
+		result.SourceCounts[source]++
 		if event.WorldID != "" {
 			item := worlds[event.WorldID]
 			if item == nil {
@@ -429,7 +438,7 @@ func (s *Store) FriendActivityInsights(ctx context.Context, userID string, days 
 				item.LastSeenAt = event.ObservedAt
 			}
 		}
-		if event.Type == "game.player-joined" {
+		if event.Type == "game.player-joined" && joinedAt == nil {
 			joined := event.ObservedAt
 			joinedAt = &joined
 			result.LastMetAt = &joined
@@ -441,12 +450,14 @@ func (s *Store) FriendActivityInsights(ctx context.Context, userID string, days 
 				duration := left.Sub(*joinedAt)
 				if duration <= 12*time.Hour {
 					result.TogetherMinutes += int(duration.Round(time.Minute) / time.Minute)
+					result.TogetherSessions++
 				}
 			}
 			joinedAt = nil
 		}
 	}
 	result.CoverageDays = len(dates)
+	result.DistinctWorlds = len(worlds)
 	for hour, count := range hours {
 		result.ActiveHours = append(result.ActiveHours, model.FriendActivityHour{Hour: hour, Count: count})
 	}

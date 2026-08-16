@@ -216,15 +216,15 @@ type GameLogStatus struct {
 }
 
 type UpdateStatus struct {
-	State       string    `json:"state"`
-	Current     string    `json:"current"`
-	Latest      string    `json:"latest,omitempty"`
-	PublishedAt time.Time `json:"publishedAt,omitempty"`
-	Source      string    `json:"source,omitempty"`
-	DownloadURL string    `json:"downloadUrl,omitempty"`
-	SHA256      string    `json:"sha256,omitempty"`
-	Size        int64     `json:"size,omitempty"`
-	Message     string    `json:"message,omitempty"`
+	State        string    `json:"state"`
+	Current      string    `json:"current"`
+	Latest       string    `json:"latest,omitempty"`
+	PublishedAt  time.Time `json:"publishedAt,omitempty"`
+	Source       string    `json:"source,omitempty"`
+	DownloadURL  string    `json:"downloadUrl,omitempty"`
+	Size         int64     `json:"size,omitempty"`
+	ReleaseNotes []string  `json:"releaseNotes,omitempty"`
+	Message      string    `json:"message,omitempty"`
 }
 
 type WorldFavorite struct {
@@ -306,15 +306,19 @@ type FriendActivityWorld struct {
 }
 
 type FriendActivityInsights struct {
-	UserID          string                `json:"userId"`
-	TotalEvents     int                   `json:"totalEvents"`
-	CoverageDays    int                   `json:"coverageDays"`
-	TogetherMinutes int                   `json:"togetherMinutes"`
-	LastMetAt       *time.Time            `json:"lastMetAt,omitempty"`
-	ActiveHours     []FriendActivityHour  `json:"activeHours"`
-	CommonWorlds    []FriendActivityWorld `json:"commonWorlds"`
-	Timeline        []ActivityEvent       `json:"timeline"`
-	GeneratedAt     time.Time             `json:"generatedAt"`
+	UserID           string                `json:"userId"`
+	TotalEvents      int                   `json:"totalEvents"`
+	CoverageDays     int                   `json:"coverageDays"`
+	TogetherMinutes  int                   `json:"togetherMinutes"`
+	TogetherSessions int                   `json:"togetherSessions"`
+	DistinctWorlds   int                   `json:"distinctWorlds"`
+	FirstObservedAt  *time.Time            `json:"firstObservedAt,omitempty"`
+	LastMetAt        *time.Time            `json:"lastMetAt,omitempty"`
+	SourceCounts     map[string]int        `json:"sourceCounts"`
+	ActiveHours      []FriendActivityHour  `json:"activeHours"`
+	CommonWorlds     []FriendActivityWorld `json:"commonWorlds"`
+	Timeline         []ActivityEvent       `json:"timeline"`
+	GeneratedAt      time.Time             `json:"generatedAt"`
 }
 
 type FriendStatus struct {

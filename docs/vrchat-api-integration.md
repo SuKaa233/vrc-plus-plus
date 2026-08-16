@@ -14,7 +14,7 @@
 3. 每个请求都带稳定、可联系的 User-Agent，例如：
 
    ```text
-   VRCPlusPlus/0.9.0-beta.1 contact@example.com
+   VRCPlusPlus/0.9.0-beta.2 contact@example.com
    ```
 
 4. Cookie、Authorization、2FA 和 Pipeline token 不进入前端状态、URL、普通日志或遥测。

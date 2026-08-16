@@ -24,11 +24,13 @@ import {
 } from '@lucide/vue'
 import type { Friend, FriendActivityInsights, FriendAnnotation, FriendStatus, MutualFriend, UserProfile, World } from './api'
 import { optimizedVrcImageUrl, preferredFriendAvatar } from './media'
+import { buildFriendReplay } from './product-insights'
 
 const props = defineProps<{
   friend: Friend
   profile: UserProfile | null
   world: World | null
+  worlds: World[]
   mutuals: MutualFriend[]
   loading: boolean
   error: string
@@ -58,6 +60,7 @@ const localGroup = ref('')
 const localColor = ref('#4f6ef7')
 const localTags = ref('')
 const selectedBoop = ref('default_hand_wave')
+const replayDays = ref<1 | 7 | 30>(7)
 const boopOptions = [
   { id: 'default_hand_wave', label: '挥手', emoji: '👋' },
   { id: 'default_smile', label: '微笑', emoji: '😊' },
@@ -102,6 +105,8 @@ const avatar = computed(() => props.mediaUrl(
 ))
 const banner = computed(() => props.mediaUrl(props.profile?.bannerUrl))
 const safeLinks = computed(() => (props.profile?.bioLinks ?? []).filter((value) => /^https?:\/\//i.test(value)))
+const knownWorlds = computed(() => new Map(props.worlds.map((item) => [item.id, item.name])))
+const replay = computed(() => buildFriendReplay(props.insights?.timeline ?? [], props.friend.id, props.worlds, replayDays.value))
 
 function statusLabel(value?: string) {
   return ({ active: '可加入', join_me: '欢迎加入', ask_me: '加入前询问', busy: '请勿打扰', offline: '离线' } as Record<string, string>)[value ?? ''] || '状态未知'
@@ -235,12 +240,16 @@ function durationLabel(minutes: number) {
           <div class="section-title"><BarChart3 :size="16" /><strong>你们的本机记录</strong><span>近 30 天 · 基于本机观测</span></div>
           <div class="insight-grid">
             <div><Timer :size="15" /><span>已配对同场时长</span><strong>{{ durationLabel(insights?.togetherMinutes ?? 0) }}</strong></div>
+            <div><Users :size="15" /><span>已配对共同会话</span><strong>{{ insights?.togetherSessions ?? 0 }} 次</strong></div>
             <div><CalendarDays :size="15" /><span>最近同场</span><strong>{{ dateTimeLabel(insights?.lastMetAt) }}</strong></div>
             <div><BarChart3 :size="15" /><span>观察事件</span><strong>{{ insights?.totalEvents ?? 0 }} 条 / {{ insights?.coverageDays ?? 0 }} 天</strong></div>
             <div><Clock3 :size="15" /><span>常见活跃时段</span><strong>{{ insights?.activeHours?.length ? insights.activeHours.map(item => `${item.hour}:00`).join('、') : '数据不足' }}</strong></div>
+            <div><Globe2 :size="15" /><span>涉及世界</span><strong>{{ insights?.distinctWorlds ?? 0 }} 个</strong></div>
           </div>
-          <div v-if="insights?.commonWorlds?.length" class="common-worlds"><span v-for="item in insights.commonWorlds" :key="item.worldId"><Globe2 :size="12" />{{ item.worldId }} · {{ item.count }} 次</span></div>
-          <div v-if="insights?.timeline?.length" class="friend-timeline"><div v-for="event in insights.timeline.slice(0, 6)" :key="event.id"><i></i><span><strong>{{ event.summary }}</strong><small>{{ dateTimeLabel(event.observedAt) }}</small></span></div></div>
+          <div v-if="insights?.commonWorlds?.length" class="common-worlds"><span v-for="item in insights.commonWorlds" :key="item.worldId"><Globe2 :size="12" />{{ knownWorlds.get(item.worldId) || item.worldId }} · {{ item.count }} 条观测</span></div>
+          <div class="evidence-strip"><span>游戏日志 {{ insights?.sourceCounts?.gameLog ?? 0 }}</span><span>Pipeline {{ insights?.sourceCounts?.pipeline ?? 0 }}</span><span>首次观测 {{ dateLabel(insights?.firstObservedAt) }}</span></div>
+          <div class="replay-toolbar"><strong>好友聚焦回放</strong><div><button v-for="days in ([1,7,30] as const)" :key="days" :class="{ active: replayDays === days }" @click="replayDays = days">{{ days === 1 ? '24 小时' : `${days} 天` }}</button></div></div>
+          <div v-if="replay.length" class="friend-timeline"><div v-for="event in replay.slice(0, 12)" :key="event.id"><i></i><span><strong>{{ event.title }}</strong><small>{{ event.detail }} · {{ dateTimeLabel(event.observedAt) }} · {{ event.source === 'gameLog' ? '游戏日志' : '实时观察' }}</small></span></div></div>
           <p v-else class="muted-copy">暂无足够的 Pipeline 或游戏日志记录。未观测到不代表你们没有共同活动。</p>
         </section>
 
@@ -297,7 +306,7 @@ function durationLabel(minutes: number) {
 .muted-copy, .bio-copy { color: var(--muted); margin: 9px 0 0; font-size: 10px; line-height: 1.7; white-space: pre-wrap; }.bio-copy { color: var(--ink-soft); }
 .bio-links { margin-top: 11px; display: grid; gap: 6px; }.bio-links a { min-width: 0; color: var(--accent); text-decoration: none; font-size: 9px; display: flex; align-items: center; gap: 6px; }.bio-links a svg:last-child { margin-left: auto; }.bio-links a { overflow-wrap: anywhere; }
 .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }.meta-grid > div { min-width: 0; padding: 10px; background: var(--surface-muted); border-radius: 8px; display: grid; grid-template-columns: 18px 1fr; align-items: center; }.meta-grid svg { color: var(--accent); grid-row: 1 / 3; }.meta-grid span { color: var(--muted); font-size: 8px; }.meta-grid strong { margin-top: 3px; font-size: 9px; }
-.local-insights{display:grid;gap:10px}.insight-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.insight-grid>div{min-width:0;padding:9px;background:var(--surface-muted);border-radius:7px;display:grid;grid-template-columns:18px 1fr;align-items:center}.insight-grid svg{grid-row:1/3;color:var(--muted)}.insight-grid span{color:var(--muted);font-size:8px}.insight-grid strong{margin-top:3px;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.common-worlds{display:flex;flex-wrap:wrap;gap:5px}.common-worlds span{display:inline-flex;align-items:center;gap:4px;padding:4px 6px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:8px}.friend-timeline{display:grid}.friend-timeline>div{display:grid;grid-template-columns:8px 1fr;align-items:center;gap:7px;padding:6px 2px;border-top:1px solid var(--line)}.friend-timeline>div:first-child{border-top:0}.friend-timeline i{width:6px;height:6px;border-radius:50%;background:var(--accent)}.friend-timeline strong,.friend-timeline small{display:block}.friend-timeline strong{font-size:9px}.friend-timeline small{margin-top:2px;color:var(--muted);font-size:8px}
+.local-insights{display:grid;gap:10px}.insight-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.insight-grid>div{min-width:0;padding:9px;background:var(--surface-muted);border-radius:7px;display:grid;grid-template-columns:18px 1fr;align-items:center}.insight-grid svg{grid-row:1/3;color:var(--muted)}.insight-grid span{color:var(--muted);font-size:8px}.insight-grid strong{margin-top:3px;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.common-worlds,.evidence-strip{display:flex;flex-wrap:wrap;gap:5px}.common-worlds span,.evidence-strip span{display:inline-flex;align-items:center;gap:4px;padding:4px 6px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:8px}.evidence-strip span{background:var(--surface-muted)}.replay-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:3px}.replay-toolbar>strong{font-size:9px}.replay-toolbar>div{display:flex;gap:4px}.replay-toolbar button{padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--muted);font-size:8px}.replay-toolbar button.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}.friend-timeline{display:grid}.friend-timeline>div{display:grid;grid-template-columns:8px 1fr;align-items:center;gap:7px;padding:6px 2px;border-top:1px solid var(--line)}.friend-timeline>div:first-child{border-top:0}.friend-timeline i{width:6px;height:6px;border-radius:50%;background:var(--accent)}.friend-timeline strong,.friend-timeline small{display:block}.friend-timeline strong{font-size:9px}.friend-timeline small{margin-top:2px;color:var(--muted);font-size:8px}
 .boop-section{display:grid;gap:10px}.boop-controls{display:grid;grid-template-columns:1fr auto;gap:8px}.boop-controls select{min-width:0;padding:9px 10px;color:var(--ink);background:var(--surface-muted);border:1px solid var(--line);border-radius:8px;font:inherit;font-size:10px}.boop-controls button{min-width:92px;padding:9px 13px;color:#fff;background:var(--accent);border:1px solid var(--accent);border-radius:8px;font-size:10px;font-weight:650;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}.boop-controls button:disabled{opacity:.6;cursor:default}.boop-message{margin:0;color:var(--success);font-size:9px}
 .mutual-grid { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }.mutual-grid button { min-width: 0; padding: 7px; color: var(--ink); background: var(--surface-muted); border: 1px solid transparent; border-radius: 8px; display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 8px; text-align: left; cursor: pointer; }.mutual-grid button:hover { border-color: var(--line-strong); }.mutual-grid img, .mutual-grid button > span { width: 34px; height: 34px; object-fit: cover; background: var(--accent-soft); border-radius: 8px; display: grid; place-items: center; }.mutual-grid div { min-width: 0; }.mutual-grid strong, .mutual-grid small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }.mutual-grid strong { font-size: 9px; }.mutual-grid small { color: var(--muted); margin-top: 3px; font-size: 8px; }
 .local-organizer{display:grid;gap:9px}.local-organizer .section-title{margin-bottom:1px}.local-organizer label{display:grid;gap:5px;color:var(--muted);font-size:8px}.local-organizer input,.local-organizer textarea{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface-muted);color:var(--ink);font:inherit;resize:vertical}.local-organizer input[type=color]{height:34px;padding:3px}.organizer-grid{display:grid;grid-template-columns:1fr 86px;gap:8px}.local-organizer>button{justify-self:end;display:flex;align-items:center;gap:6px;padding:8px 10px;border:0;border-radius:7px;background:var(--accent);color:#fff;font-size:9px;font-weight:650}

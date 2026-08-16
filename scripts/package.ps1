@@ -1,4 +1,8 @@
-param([switch]$SkipTests, [switch]$RequireSigned)
+param(
+    [switch]$SkipTests,
+    [switch]$RequireSigned,
+    [string]$InnoCompiler
+)
 
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
@@ -7,39 +11,37 @@ try {
     & (Join-Path $PSScriptRoot 'build.ps1') -SkipTests:$SkipTests
     if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 
+    $version = (Get-Content -LiteralPath (Join-Path $workspace 'package.json') -Raw | ConvertFrom-Json).version
     & (Join-Path $PSScriptRoot 'sign.ps1') -Binary 'dist\vrc-plus-plus.exe' -RequireSigned:$RequireSigned
 
-    $version = (Get-Content -LiteralPath (Join-Path $workspace 'package.json') -Raw | ConvertFrom-Json).version
-    $stage = Join-Path $workspace "dist\package\vrc-plus-plus-$version-windows-x64"
-    $resolvedWorkspace = [IO.Path]::GetFullPath($workspace).TrimEnd('\') + '\'
-    $resolvedStage = [IO.Path]::GetFullPath($stage)
-    if (-not $resolvedStage.StartsWith($resolvedWorkspace, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Unsafe package staging path: $resolvedStage"
+    $compilerCandidates = @(
+        $InnoCompiler,
+        $env:VRC_PLUS_PLUS_ISCC,
+        (Join-Path $workspace '.tools\inno\ISCC.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe'),
+        (Join-Path $env:ProgramFiles 'Inno Setup 7\ISCC.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+    $iscc = $compilerCandidates | Select-Object -First 1
+    if (-not $iscc) {
+        throw 'Inno Setup compiler was not found. Install Inno Setup 7 or pass -InnoCompiler <path-to-ISCC.exe>.'
     }
-    if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
-    New-Item -ItemType Directory -Path $stage -Force | Out-Null
-    Copy-Item -LiteralPath 'dist\vrc-plus-plus.exe' -Destination $stage
-    Copy-Item -LiteralPath 'scripts\install.ps1' -Destination $stage
-    Copy-Item -LiteralPath 'scripts\uninstall.ps1' -Destination $stage
-    Copy-Item -LiteralPath 'README.md' -Destination $stage
 
-    $archive = Join-Path $workspace "dist\vrc-plus-plus-$version-windows-x64.zip"
-    if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
-    Compress-Archive -LiteralPath $stage -DestinationPath $archive -CompressionLevel Optimal
-    $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-    $manifest = [ordered]@{
-        version = $version
-        publishedAt = (Get-Date).ToUniversalTime().ToString('o')
-        windowsX64 = [ordered]@{
-            file = (Split-Path -Leaf $archive)
-            sha256 = $hash
-            size = (Get-Item -LiteralPath $archive).Length
-            mirrors = @()
-        }
-    }
-    $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'dist\update-manifest.json' -Encoding UTF8
-    Write-Host "Package: $archive"
-    Write-Host "SHA256: $hash"
+    $sourceExe = [IO.Path]::GetFullPath((Join-Path $workspace 'dist\vrc-plus-plus.exe'))
+    $outputDirectory = [IO.Path]::GetFullPath((Join-Path $workspace 'dist'))
+    $installerScript = [IO.Path]::GetFullPath((Join-Path $workspace 'installer\VRCPlusPlus.iss'))
+    $versionMatch = [regex]::Match($version, '^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$')
+    if (-not $versionMatch.Success) { throw "Unsupported installer version format: $version" }
+    $revision = if ($versionMatch.Groups[4].Success) { $versionMatch.Groups[4].Value } else { '0' }
+    $numericVersion = '{0}.{1}.{2}.{3}' -f $versionMatch.Groups[1].Value, $versionMatch.Groups[2].Value, $versionMatch.Groups[3].Value, $revision
+    & $iscc "/DAppVersion=$version" "/DAppNumericVersion=$numericVersion" "/DSourceExe=$sourceExe" "/DOutputDirectory=$outputDirectory" $installerScript
+    if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+
+    $installer = Join-Path $outputDirectory "VRC++-Setup-$version.exe"
+    if (-not (Test-Path -LiteralPath $installer)) { throw "Installer was not produced: $installer" }
+    & (Join-Path $PSScriptRoot 'sign.ps1') -Binary $installer -RequireSigned:$RequireSigned
+    & (Join-Path $PSScriptRoot 'prepare-release.ps1')
+    Write-Host "Installer: $installer"
 } finally {
     Pop-Location
 }

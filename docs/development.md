@@ -10,9 +10,8 @@
 
 如果需要重新准备工具链：
 
-1. 从 [Go 官方下载页](https://go.dev/dl/) 下载 `go1.26.5.windows-amd64.zip`；
-2. 校验 SHA-256 为 `97e6b2a833b6d89f9ff17d25419ac0a7e3b482a044e9ab18cdef834bd834fd38`；
-3. 解压到项目 `.tools`，最终路径应为 `.tools/go/bin/go.exe`。
+1. 从 [Go 官方下载页](https://go.dev/dl/) 下载 Windows x64 工具链；
+2. 解压到项目 `.tools`，最终路径应为 `.tools/go/bin/go.exe`。
 
 ## 安装前端依赖
 
@@ -59,16 +58,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
 - `-tray=false`：不显示 Windows 通知区域图标；
 - `-listen`、`-data-dir`、`-dev-origin`：覆盖监听地址、数据目录和开发源站。
 
-## 必配 User-Agent
+## User-Agent
 
-正式使用前设置带真实联系方式的 User-Agent：
+发行构建会按当前版本生成 `VRCPlusPlus/<版本> 2579362548@qq.com`，用户无需配置。开发者需要测试其他应用标识时可临时覆盖：
 
 ```powershell
-$env:VRC_HARBOR_USER_AGENT='VRCPlusPlus/0.9.0-beta.1 your-email@example.com'
+$env:VRC_HARBOR_USER_AGENT='YourApp/0.1 your-email@example.com'
 ```
-
-仓库默认值使用 `.invalid` 地址，仅用于本地编译和无账号的界面开发，不应拿去正式连接 VRChat。
-网关会拒绝使用默认 `.invalid` User-Agent 发起账号登录，防止开发时忘记设置真实联系信息。
 
 ## 网络模式
 

@@ -625,6 +625,9 @@ func (s *Server) updateNetwork(writer http.ResponseWriter, request *http.Request
 		writeError(writer, err)
 		return
 	}
+	if s.updater != nil {
+		s.updater.SetHTTPClient(s.vrchat.HTTPClientSnapshot(5 * time.Minute))
+	}
 	s.diagnostics.Invalidate()
 	if wasActive {
 		s.pipeline.Start()

@@ -2,15 +2,22 @@ param(
     [Parameter(Mandatory = $true)][string]$Binary,
     [string]$CertificateThumbprint = $env:VRC_HARBOR_SIGN_CERT_THUMBPRINT,
     [string]$CertificatePath = $env:VRC_HARBOR_SIGN_CERT_PATH,
+    [ValidateSet('CurrentUser', 'LocalMachine')][string]$CertificateStore = $(if ($env:VRC_HARBOR_SIGN_CERT_STORE) { $env:VRC_HARBOR_SIGN_CERT_STORE } else { 'CurrentUser' }),
+    [string]$SignToolPath = $env:VRC_HARBOR_SIGNTOOL_PATH,
     [switch]$RequireSigned
 )
 
 $ErrorActionPreference = 'Stop'
 $resolvedBinary = (Resolve-Path -LiteralPath $Binary).Path
-$signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
-    Sort-Object FullName -Descending |
-    Select-Object -First 1 -ExpandProperty FullName
+$signtool = $null
+if ($SignToolPath) {
+    $signtool = (Resolve-Path -LiteralPath $SignToolPath).Path
+} else {
+    $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+}
 
 if (-not $signtool) {
     if ($RequireSigned) { throw 'Windows SDK signtool.exe is required for a signed release.' }
@@ -20,7 +27,8 @@ if (-not $signtool) {
 
 $certificateArgs = @()
 if ($CertificateThumbprint) {
-    $certificateArgs = @('/sha1', $CertificateThumbprint, '/sm')
+    $certificateArgs = @('/sha1', $CertificateThumbprint)
+    if ($CertificateStore -eq 'LocalMachine') { $certificateArgs += '/sm' }
 } elseif ($CertificatePath) {
     $resolvedCertificate = (Resolve-Path -LiteralPath $CertificatePath).Path
     $certificateArgs = @('/f', $resolvedCertificate)

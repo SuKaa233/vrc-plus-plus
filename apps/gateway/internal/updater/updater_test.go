@@ -12,7 +12,7 @@ import (
 func TestCheckFallsBackToSecondSource(t *testing.T) {
 	good := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(writer, `{"version":"0.2.0","publishedAt":"2026-08-15T00:00:00Z","windowsX64":{"file":"release.zip","sha256":"abc","size":3,"mirrors":[]}}`)
+		fmt.Fprint(writer, `{"version":"0.2.0","publishedAt":"2026-08-15T00:00:00Z","windowsX64":{"file":"VRC++-Setup-0.2.0.exe","size":3,"mirrors":[]}}`)
 	}))
 	defer good.Close()
 	t.Setenv("VRC_HARBOR_UPDATE_URLS", "http://127.0.0.1:1/unavailable;"+good.URL+"/update-manifest.json")
@@ -20,6 +20,32 @@ func TestCheckFallsBackToSecondSource(t *testing.T) {
 	status := service.Check(context.Background())
 	if status.State != "available" || status.Source != good.URL+"/update-manifest.json" {
 		t.Fatalf("unexpected status: %#v", status)
+	}
+}
+
+func TestDownloadStagesInstallerForLocalDevelopment(t *testing.T) {
+	installer := []byte("development installer")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/update-manifest.json" {
+			writer.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(writer, `{"version":"0.2.0","publishedAt":"2026-08-15T00:00:00Z","windowsX64":{"file":"VRC++-Setup-0.2.0.exe","size":%d,"mirrors":[]}}`, len(installer))
+			return
+		}
+		_, _ = writer.Write(installer)
+	}))
+	defer server.Close()
+	t.Setenv("VRC_HARBOR_UPDATE_URLS", server.URL+"/update-manifest.json")
+	t.Setenv("VRC_PLUS_PLUS_ALLOW_UNSIGNED_UPDATES", "1")
+	service := New("0.1.0", t.TempDir(), &http.Client{Timeout: time.Second}, nil)
+	if status := service.Check(context.Background()); status.State != "available" {
+		t.Fatalf("expected available update, got %#v", status)
+	}
+	status, err := service.Download(context.Background())
+	if err != nil || status.State != "ready" {
+		t.Fatalf("download failed: status=%#v err=%v", status, err)
+	}
+	if err := service.LaunchApply(); err == nil {
+		t.Fatal("a development text fixture must not launch as an installer")
 	}
 }
 

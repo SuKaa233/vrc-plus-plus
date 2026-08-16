@@ -25,6 +25,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .app-shell { min-height: 100vh; }
 .app-shell.console-mode { min-height: 100vh; }
+.update-notice {
+  position: fixed; right: 20px; bottom: 20px; z-index: 850; width: min(420px, calc(100vw - 40px));
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 13px 14px;
+  border: 1px solid var(--line-strong); border-radius: 10px; color: var(--ink); background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .2);
+}
+.update-notice > svg { color: var(--accent); }
+.update-notice div { min-width: 0; display: grid; gap: 3px; }
+.update-notice strong, .update-notice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.update-notice span { color: var(--muted); font-size: 11px; }
+.update-notice button { padding: 8px 10px; border: 0; border-radius: 7px; color: #fff; background: var(--accent); cursor: pointer; white-space: nowrap; }
+.update-notice button:disabled { opacity: .55; cursor: wait; }
 
 /* Shared */
 .brand { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }

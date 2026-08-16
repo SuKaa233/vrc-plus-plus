@@ -202,7 +202,7 @@ func TestWorldFavoritesAndSanitizedActivityHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	friendInsights, err := store.FriendActivityInsights(ctx, "usr_alpha", 30)
-	if err != nil || friendInsights.TotalEvents != 3 || friendInsights.TogetherMinutes != 30 || len(friendInsights.Timeline) != 3 || friendInsights.LastMetAt == nil {
+	if err != nil || friendInsights.TotalEvents != 3 || friendInsights.TogetherMinutes != 30 || friendInsights.TogetherSessions != 1 || friendInsights.SourceCounts["gameLog"] != 2 || friendInsights.SourceCounts["pipeline"] != 1 || friendInsights.FirstObservedAt == nil || len(friendInsights.Timeline) != 3 || friendInsights.LastMetAt == nil {
 		t.Fatalf("FriendActivityInsights() = %#v, %v", friendInsights, err)
 	}
 	if err := store.ClearActivityEvents(ctx); err != nil {

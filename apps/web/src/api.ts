@@ -225,8 +225,8 @@ export interface UpdateStatus {
   publishedAt?: string
   source?: string
   downloadUrl?: string
-  sha256?: string
   size?: number
+  releaseNotes?: string[]
   message?: string
 }
 
@@ -290,7 +290,11 @@ export interface FriendActivityInsights {
   totalEvents: number
   coverageDays: number
   togetherMinutes: number
+  togetherSessions: number
+  distinctWorlds: number
+  firstObservedAt?: string
   lastMetAt?: string
+  sourceCounts: Record<string, number>
   activeHours: Array<{ hour: number; count: number }>
   commonWorlds: Array<{ worldId: string; count: number; lastSeenAt: string }>
   timeline: ActivityEvent[]

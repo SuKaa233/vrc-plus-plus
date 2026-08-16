@@ -1,10 +1,7 @@
 package updater
 
 import (
-	"archive/zip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,61 +21,134 @@ import (
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
 )
 
+const maxInstallerSize = 512 << 20
+
 type asset struct {
 	File    string   `json:"file"`
-	SHA256  string   `json:"sha256"`
 	Size    int64    `json:"size"`
 	Mirrors []string `json:"mirrors"`
 }
+
 type manifest struct {
-	Version     string    `json:"version"`
-	PublishedAt time.Time `json:"publishedAt"`
-	WindowsX64  asset     `json:"windowsX64"`
+	Version      string    `json:"version"`
+	PublishedAt  time.Time `json:"publishedAt"`
+	ReleaseNotes []string  `json:"releaseNotes,omitempty"`
+	WindowsX64   asset     `json:"windowsX64"`
 }
 
 type Service struct {
 	current, directory string
 	sources            []string
 	client             *http.Client
+	clientMu           sync.RWMutex
 	logger             *slog.Logger
 	mu                 sync.RWMutex
 	status             model.UpdateStatus
 	asset              asset
+	stagedInstaller    string
 }
 
-func New(current, directory string, client *http.Client, logger *slog.Logger) *Service {
+func (s *Service) SetHTTPClient(client *http.Client) {
+	if client == nil {
+		return
+	}
+	s.clientMu.Lock()
+	s.client = client
+	s.clientMu.Unlock()
+}
+
+func (s *Service) httpClient() *http.Client {
+	s.clientMu.RLock()
+	defer s.clientMu.RUnlock()
+	return s.client
+}
+
+func New(current, directory string, client *http.Client, logger *slog.Logger, builtInSources ...string) *Service {
 	var sources []string
 	for _, raw := range strings.Split(os.Getenv("VRC_HARBOR_UPDATE_URLS"), ";") {
 		if value := strings.TrimSpace(raw); value != "" {
 			sources = append(sources, value)
 		}
 	}
+	for _, group := range builtInSources {
+		for _, raw := range strings.Split(group, ";") {
+			if value := strings.TrimSpace(raw); value != "" && !containsString(sources, value) {
+				sources = append(sources, value)
+			}
+		}
+	}
+	defaultSource := defaultManifestSource(current)
+	if !containsString(sources, defaultSource) {
+		sources = append(sources, defaultSource)
+	}
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
-	state := "unconfigured"
-	message := "设置 VRC_HARBOR_UPDATE_URLS 后启用双源更新"
-	if len(sources) > 0 {
-		state, message = "idle", "已配置更新源"
+	return &Service{
+		current:   current,
+		directory: directory,
+		sources:   sources,
+		client:    client,
+		logger:    logger,
+		status:    model.UpdateStatus{State: "idle", Current: current, Message: "等待自动检查更新"},
 	}
-	return &Service{current: current, directory: directory, sources: sources, client: client, logger: logger, status: model.UpdateStatus{State: state, Current: current, Message: message}}
 }
 
-func (s *Service) Status() model.UpdateStatus { s.mu.RLock(); defer s.mu.RUnlock(); return s.status }
+func defaultManifestSource(current string) string {
+	if strings.Contains(current, "-") {
+		return "https://github.com/SuKaa233/vrc-plus-plus/releases/download/update-beta/update-manifest.json"
+	}
+	return "https://github.com/SuKaa233/vrc-plus-plus/releases/latest/download/update-manifest.json"
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) Status() model.UpdateStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.status
+}
+
+func (s *Service) StartBackground(ctx context.Context, initialDelay, interval time.Duration) {
+	go func() {
+		timer := time.NewTimer(initialDelay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			s.Check(ctx)
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.Check(ctx)
+			}
+		}
+	}()
+}
 
 func (s *Service) Check(ctx context.Context) model.UpdateStatus {
-	if len(s.sources) == 0 {
-		return s.Status()
-	}
 	var failures []string
 	for _, source := range s.sources {
 		parsed, err := url.Parse(source)
-		if err != nil || (parsed.Scheme != "https" && !(parsed.Scheme == "http" && parsed.Hostname() == "127.0.0.1")) {
+		if err != nil || !allowedUpdateURL(parsed) {
 			failures = append(failures, "无效更新源")
 			continue
 		}
 		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
-		response, err := s.client.Do(request)
+		response, err := s.httpClient().Do(request)
 		if err != nil {
 			failures = append(failures, err.Error())
 			continue
@@ -90,32 +160,47 @@ func (s *Service) Check(ctx context.Context) model.UpdateStatus {
 			continue
 		}
 		var value manifest
-		if err := json.Unmarshal(data, &value); err != nil || value.Version == "" || value.WindowsX64.SHA256 == "" {
+		if err := json.Unmarshal(data, &value); err != nil || value.Version == "" || value.WindowsX64.File == "" {
 			failures = append(failures, parsed.Host+": 清单无效")
 			continue
 		}
 		download := firstMirror(source, value.WindowsX64)
+		if download == "" {
+			failures = append(failures, parsed.Host+": 没有有效的安装程序地址")
+			continue
+		}
 		state := "current"
 		message := "当前已是最新版本"
 		if newer(value.Version, s.current) {
 			state, message = "available", "发现可用更新"
 		}
-		result := model.UpdateStatus{State: state, Current: s.current, Latest: value.Version, PublishedAt: value.PublishedAt, Source: source, DownloadURL: download, SHA256: strings.ToLower(value.WindowsX64.SHA256), Size: value.WindowsX64.Size, Message: message}
+		result := model.UpdateStatus{
+			State: state, Current: s.current, Latest: value.Version, PublishedAt: value.PublishedAt,
+			Source: source, DownloadURL: download, Size: value.WindowsX64.Size,
+			ReleaseNotes: value.ReleaseNotes, Message: message,
+		}
 		s.mu.Lock()
 		s.status, s.asset = result, value.WindowsX64
 		s.mu.Unlock()
 		return result
 	}
-	result := model.UpdateStatus{State: "error", Current: s.current, Message: "所有更新源均不可用：" + strings.Join(failures, "；")}
+	result := model.UpdateStatus{State: "error", Current: s.current, Message: "暂时无法连接更新服务器"}
+	if s.logger != nil && len(failures) > 0 {
+		s.logger.Warn("all update sources failed", "failures", strings.Join(failures, "; "))
+	}
 	s.mu.Lock()
 	s.status = result
 	s.mu.Unlock()
 	return result
 }
 
+func allowedUpdateURL(parsed *url.URL) bool {
+	return parsed.Scheme == "https" || (parsed.Scheme == "http" && (parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "localhost"))
+}
+
 func firstMirror(source string, item asset) string {
 	for _, value := range item.Mirrors {
-		if parsed, err := url.Parse(value); err == nil && parsed.Scheme == "https" {
+		if parsed, err := url.Parse(value); err == nil && allowedUpdateURL(parsed) {
 			return value
 		}
 	}
@@ -126,6 +211,9 @@ func firstMirror(source string, item asset) string {
 	base.Path = strings.TrimSuffix(base.Path, filepath.Base(base.Path)) + item.File
 	base.RawQuery = ""
 	base.Fragment = ""
+	if !allowedUpdateURL(base) {
+		return ""
+	}
 	return base.String()
 }
 
@@ -135,7 +223,7 @@ func (s *Service) Download(ctx context.Context) (model.UpdateStatus, error) {
 		return status, errors.New("当前没有可下载更新")
 	}
 	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, status.DownloadURL, nil)
-	response, err := s.client.Do(request)
+	response, err := s.httpClient().Do(request)
 	if err != nil {
 		return status, err
 	}
@@ -143,41 +231,49 @@ func (s *Service) Download(ctx context.Context) (model.UpdateStatus, error) {
 	if response.StatusCode != http.StatusOK {
 		return status, fmt.Errorf("download update: HTTP %d", response.StatusCode)
 	}
-	if err := os.MkdirAll(filepath.Join(s.directory, "updates"), 0o700); err != nil {
+	updatesDirectory := filepath.Join(s.directory, "updates")
+	if err := os.MkdirAll(updatesDirectory, 0o700); err != nil {
 		return status, err
 	}
-	archive := filepath.Join(s.directory, "updates", "vrc-plus-plus-"+safeVersion(status.Latest)+".zip")
-	temp := archive + ".part"
+	installer := filepath.Join(updatesDirectory, "VRC++-Setup-"+safeVersion(status.Latest)+".exe")
+	temp := installer + ".part"
 	file, err := os.OpenFile(temp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return status, err
 	}
-	hash := sha256.New()
-	_, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(response.Body, 512<<20))
+	written, copyErr := io.Copy(file, io.LimitReader(response.Body, maxInstallerSize+1))
 	closeErr := file.Close()
-	if copyErr != nil {
+	if copyErr != nil || closeErr != nil {
 		_ = os.Remove(temp)
-		return status, copyErr
-	}
-	if closeErr != nil {
-		_ = os.Remove(temp)
+		if copyErr != nil {
+			return status, copyErr
+		}
 		return status, closeErr
 	}
-	actual := hex.EncodeToString(hash.Sum(nil))
-	if !strings.EqualFold(actual, status.SHA256) {
+	if written > maxInstallerSize {
 		_ = os.Remove(temp)
-		return status, errors.New("更新包 SHA-256 校验失败")
+		return status, errors.New("更新安装程序超过 512 MB 限制")
 	}
-	if err := os.Rename(temp, archive); err != nil {
+	if status.Size > 0 && written != status.Size {
+		_ = os.Remove(temp)
+		return status, fmt.Errorf("更新安装程序大小不匹配：期望 %d，实际 %d", status.Size, written)
+	}
+	if err := verifyInstaller(temp); err != nil {
+		if os.Getenv("VRC_PLUS_PLUS_ALLOW_UNSIGNED_UPDATES") != "1" {
+			_ = os.Remove(temp)
+			return status, fmt.Errorf("安装程序签名验证失败：%w", err)
+		}
+		if s.logger != nil {
+			s.logger.Warn("unsigned update accepted by local development override", "error", err)
+		}
+	}
+	_ = os.Remove(installer)
+	if err := os.Rename(temp, installer); err != nil {
 		return status, err
 	}
-	staged, err := extractExecutable(archive, filepath.Join(s.directory, "updates", "pending"))
-	if err != nil {
-		return status, err
-	}
-	status.State, status.Message = "ready", "更新已校验并暂存，点击安装后会自动重启"
-	status.DownloadURL = staged
+	status.State, status.Message = "ready", "更新已下载，点击后将自动安装并重启"
 	s.mu.Lock()
+	s.stagedInstaller = installer
 	s.status = status
 	s.mu.Unlock()
 	return status, nil
@@ -188,76 +284,21 @@ func (s *Service) LaunchApply() error {
 	if status.State != "ready" {
 		return errors.New("没有已暂存的更新")
 	}
-	current, err := os.Executable()
-	if err != nil {
-		return err
+	s.mu.RLock()
+	installer := s.stagedInstaller
+	s.mu.RUnlock()
+	if installer == "" {
+		return errors.New("更新安装程序不存在")
 	}
-	helper := filepath.Join(s.directory, "updates", "vrc-plus-plus-update-helper.exe")
-	if err := copyFile(current, helper); err != nil {
-		return fmt.Errorf("prepare update helper: %w", err)
+	if _, err := os.Stat(installer); err != nil {
+		return fmt.Errorf("读取更新安装程序：%w", err)
 	}
-	cmd := exec.Command(helper, "--update-helper", "--replace-from", status.DownloadURL, "--replace-target", current, "--wait-pid", strconv.Itoa(os.Getpid()))
+	cmd := exec.Command(installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER", "/CLOSEAPPLICATIONS", "/UPDATE=1")
 	cmd.Stdout, cmd.Stderr = nil, nil
 	if runtime.GOOS == "windows" {
 		cmd.SysProcAttr = hiddenProcessAttributes()
 	}
 	return cmd.Start()
-}
-
-func RunHelper(source, target string, pid int) error {
-	if source == "" || target == "" || filepath.Base(target) == "." {
-		return errors.New("invalid update helper paths")
-	}
-	for i := 0; i < 150; i++ {
-		if !processExists(pid) {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	backup := target + ".previous"
-	_ = os.Remove(backup)
-	_ = os.Rename(target, backup)
-	if err := copyFile(source, target); err != nil {
-		_ = os.Rename(backup, target)
-		return err
-	}
-	cmd := exec.Command(target, "--open-browser=true")
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = hiddenProcessAttributes()
-	}
-	return cmd.Start()
-}
-
-func extractExecutable(archive, directory string) (string, error) {
-	reader, err := zip.OpenReader(archive)
-	if err != nil {
-		return "", err
-	}
-	defer reader.Close()
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return "", err
-	}
-	for _, item := range reader.File {
-		if strings.EqualFold(filepath.Base(item.Name), "vrc-plus-plus.exe") {
-			input, err := item.Open()
-			if err != nil {
-				return "", err
-			}
-			defer input.Close()
-			target := filepath.Join(directory, "vrc-plus-plus.exe")
-			output, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o700)
-			if err != nil {
-				return "", err
-			}
-			_, copyErr := io.Copy(output, io.LimitReader(input, 256<<20))
-			closeErr := output.Close()
-			if copyErr != nil {
-				return "", copyErr
-			}
-			return target, closeErr
-		}
-	}
-	return "", errors.New("更新包中缺少 vrc-plus-plus.exe")
 }
 
 func newer(candidate, current string) bool {
@@ -353,20 +394,4 @@ func compareVersion(left, right semanticVersion) int {
 
 func safeVersion(value string) string {
 	return strings.NewReplacer("/", "-", "\\", "-", ":", "-").Replace(value)
-}
-func copyFile(source, target string) error {
-	input, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer input.Close()
-	output, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o700)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(output, input)
-	if closeErr := output.Close(); err == nil {
-		err = closeErr
-	}
-	return err
 }

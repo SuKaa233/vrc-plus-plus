@@ -72,6 +72,7 @@ import DiscoveryView from './DiscoveryView.vue'
 import FriendDetailDrawer from './FriendDetailDrawer.vue'
 import FriendListView from './FriendListView.vue'
 import FriendNetworkView from './FriendNetworkView.vue'
+import NetworkEvolution from './NetworkEvolution.vue'
 import GroupCenter from './GroupCenter.vue'
 import AvatarCabinet from './AvatarCabinet.vue'
 import GlobalSearch from './GlobalSearch.vue'
@@ -148,6 +149,7 @@ const favoriteGroups = ref<FavoriteGroup[]>([])
 const selectedWorld = ref<World | null>(null)
 const selectedInstance = ref<Instance | null>(null)
 const selectedInstanceLocation = ref('')
+const selectedInstanceError = ref('')
 const worldDetailLoading = ref(false)
 const worldFavoriteSaving = ref(false)
 const worldUpstreamSaving = ref(false)
@@ -171,6 +173,7 @@ let friendRefreshTimer: number | undefined
 let activityRefreshTimer: number | undefined
 let friendDetailRequest = 0
 let copyMessageTimer: number | undefined
+let updateStatusTimer: number | undefined
 let networkScanCancelled = false
 const worldHydrationAttempted = new Set<string>()
 
@@ -524,6 +527,7 @@ async function openWorldDetail(world: World, location = '') {
   closeFriendDetail()
   selectedWorld.value = world
   selectedInstance.value = null
+  selectedInstanceError.value = ''
   selectedInstanceLocation.value = location.startsWith(`${world.id}:`) ? location : ''
 	worldDetailLoading.value = true
 	try {
@@ -536,8 +540,8 @@ async function openWorldDetail(world: World, location = '') {
 	if (!selectedInstanceLocation.value) { worldDetailLoading.value = false; return }
 	try {
     selectedInstance.value = await api.instance(selectedInstanceLocation.value)
-  } catch {
-    // The world and explicit launch location remain useful when instance metadata is private.
+  } catch (cause) {
+    selectedInstanceError.value = cause instanceof Error ? cause.message : '实例详情受权限或网络限制'
   } finally {
     worldDetailLoading.value = false
   }
@@ -547,8 +551,9 @@ async function selectPublicInstance(location: string) {
   if (!selectedWorld.value || !location.startsWith(`${selectedWorld.value.id}:`)) return
   selectedInstanceLocation.value = location
   selectedInstance.value = null
+  selectedInstanceError.value = ''
   worldDetailLoading.value = true
-  try { selectedInstance.value = await api.instance(location) } catch { /* summary remains usable */ }
+  try { selectedInstance.value = await api.instance(location) } catch (cause) { selectedInstanceError.value = cause instanceof Error ? cause.message : '实例详情受权限或网络限制' }
   finally { worldDetailLoading.value = false }
 }
 
@@ -556,6 +561,7 @@ function closeWorldDetail() {
   selectedWorld.value = null
   selectedInstance.value = null
   selectedInstanceLocation.value = ''
+  selectedInstanceError.value = ''
   worldDetailLoading.value = false
 }
 
@@ -902,6 +908,7 @@ async function loadAppData() {
     api.activity(30, 500).then((value) => { activityEvents.value = value }),
     api.activityInsights(30).then((value) => { activityInsights.value = value }),
     api.notifications().then((value) => { notifications.value = value }),
+    api.friendNetwork().then((value) => { friendNetwork.value = value }),
   ]
   await Promise.allSettled(tasks)
   if (primaryError) error.value = primaryError instanceof Error ? primaryError.message : '读取 VRChat 数据失败'
@@ -1023,7 +1030,12 @@ function checkIcon(state: string) {
   return Clock3
 }
 
-onMounted(initialize)
+onMounted(() => {
+  void initialize()
+  updateStatusTimer = window.setInterval(() => {
+    void api.updateStatus().then((value) => { updateStatus.value = value }).catch(() => { /* keep the last known status */ })
+  }, 30_000)
+})
 watch(settingsOpen, (open) => { if (open) void refreshSystemCenter() })
 watch(uiScale, (value) => { uiScale.value = applyUIScale(value) })
 watch(locale, (value) => { locale.value = applyInterfaceLocale(value) })
@@ -1032,11 +1044,17 @@ onBeforeUnmount(() => {
   closeEvents()
   window.clearTimeout(copyMessageTimer)
   window.clearTimeout(activityRefreshTimer)
+  window.clearInterval(updateStatusTimer)
 })
 </script>
 
 <template>
   <div class="app-shell" :class="{ 'console-mode': session.status === 'authenticated' }">
+    <aside v-if="updateStatus.state === 'available' || updateStatus.state === 'ready'" class="update-notice" aria-live="polite">
+      <RefreshCw :size="20" />
+      <div><strong>{{ updateStatus.state === 'ready' ? l('更新可以安装','Update ready') : l(`发现 VRC++ ${updateStatus.latest}`,'VRC++ update available') }}</strong><span>{{ updateStatus.releaseNotes?.[0] || l('包含功能改进与问题修复','Improvements and fixes included') }}</span></div>
+      <button :disabled="updateLoading" @click="runUpdateAction(updateStatus.state === 'ready' ? 'apply' : 'download')">{{ updateLoading ? l('请稍候','Please wait') : updateStatus.state === 'ready' ? l('安装并重启','Install & restart') : l('下载更新','Download') }}</button>
+    </aside>
     <template v-if="session.status !== 'authenticated'">
       <header class="topbar">
         <a class="brand" href="#"><span class="brand-mark"><img :src="'/assets/vrc-plus-plus-mark.png'" alt="" /></span><span><strong>VRC++</strong><small>本地 VRChat 管理工具</small></span></a>
@@ -1072,10 +1090,11 @@ onBeforeUnmount(() => {
         <header class="console-header"><div><span class="panel-kicker">{{ viewCopy[0] }}</span><h1>{{ viewCopy[1] }}</h1><p>{{ viewCopy[2] }}</p></div><div class="console-actions"><GlobalSearch :friends="friends?.items ?? []" :worlds="worlds?.items ?? []" :annotations="annotations" @select-friend="openFriend" @select-world="selectSearchWorld" @resolve-user="resolveSearchUser" @resolve-world="resolveSearchWorld" /><button class="theme-button" :title="theme === 'dark' ? '切换浅色模式' : '切换深色模式'" @click="toggleTheme"><Sun v-if="theme === 'dark'" :size="17" /><Moon v-else :size="17" /></button><span class="route-pill"><PlugZap :size="14" /> {{ network.label }}</span><button class="icon-button" title="刷新" @click="refreshDiagnostics"><RefreshCw :size="17" /></button></div></header>
         <div v-if="error" class="error-banner"><CircleAlert :size="18" /> {{ error }}</div>
         <section class="console-grid" :class="{ loading: dataLoading }">
-          <TodayView v-if="activeView === 'overview'" :friends="friends?.items ?? []" :worlds="worlds?.items ?? []" :notifications="notifications" :events="activityEvents" :favorite-count="Object.keys(upstreamWorldFavorites).length" :realtime-label="realtimeLabel" :route-label="network.label" :media-url="api.mediaUrl.bind(api)" @open-friend="openFriend" @select-view="selectView" />
+          <TodayView v-if="activeView === 'overview'" :friends="friends?.items ?? []" :worlds="worlds?.items ?? []" :notifications="notifications" :events="activityEvents" :network="friendNetwork" :favorite-count="Object.keys(upstreamWorldFavorites).length" :realtime-label="realtimeLabel" :route-label="network.label" :media-url="api.mediaUrl.bind(api)" @open-friend="openFriend" @open-world="resolveSearchWorld" @select-view="selectView" />
           <CompassView v-if="activeView === 'compass'" :friends="friends?.items ?? []" :worlds="visibleWorlds" :events="activityEvents" :network="friendNetwork" :favorite-ids="Object.keys(upstreamWorldFavorites)" :storage-key="session.user?.id ?? 'default'" :realtime-label="realtimeLabel" :route-label="network.label" @open-friend="openNetworkFriend" @open-world="openCompassWorld" @load-network="loadFriendNetwork" />
           <JourneyView v-if="activeView === 'journey'" :friends="friends?.items ?? []" :worlds="visibleWorlds" :events="activityEvents" :network="friendNetwork" :diagnostics="diagnostics" :realtime="realtime" :network-state="network" :cache="cacheStats" :storage-key="session.user?.id ?? 'default'" :media-url="api.mediaUrl.bind(api)" :locale="locale" @open-friend="openNetworkFriend" @open-world="openCompassWorld" @load-network="loadFriendNetwork" @refresh-system="refreshSystemCenter" @hydrate-worlds="hydrateVisibleWorlds" />
           <RecentAccess v-if="activeView === 'overview'" :items="recentAccess" :media-url="api.mediaUrl.bind(api)" @open="openRecent" />
+          <NetworkEvolution v-if="activeView === 'network'" :network="friendNetwork" :storage-key="session.user?.id ?? 'default'" />
           <FriendNetworkView v-if="activeView === 'network'" :network="friendNetwork" :scanning="networkScanning" :scan-processed="networkScanProcessed" :scan-total="networkScanTotal" :scan-estimate="networkScanEstimate" :scan-message="networkScanMessage" :media-url="api.mediaUrl.bind(api)" :layout-key="session.user?.id ?? 'default'" :annotations="annotations" @start-scan="startNetworkScan" @scan-friends="startNetworkScan" @stop-scan="stopNetworkScan" @open-friend="openNetworkFriend" />
           <FriendListView v-if="activeView === 'friends'" :friends="friends?.items ?? []" :annotations="annotations" :media-url="api.mediaUrl.bind(api)" :storage-key="session.user?.id ?? 'default'" :source="friends?.source ?? 'live'" :message="friends?.message" @open-friend="openFriend" />
           <DiscoveryView v-if="activeView === 'discovery'" :friends="friends?.items ?? []" :events="activityEvents" :results="discoveryResults" :statuses="discoveryStatuses" :loading="discoveryLoading" :acting-id="friendRequestActingID" :media-url="api.mediaUrl.bind(api)" @search="searchDiscoveryUsers" @open="openDiscoveryUser" @request="sendUserFriendRequest" />
@@ -1083,7 +1102,7 @@ onBeforeUnmount(() => {
           <NotificationCenter v-if="activeView === 'notifications'" class="wide-view" :items="notifications" :loading="notificationsLoading" :acting-id="notificationActingID" @refresh="loadNotifications" @action="actOnNotification" @open-world="openNotificationWorld" />
           <GroupCenter v-if="activeView === 'groups'" :user-id="session.user?.id ?? ''" :media-url="api.mediaUrl.bind(api)" @open-world="openWorldDetail" />
           <AvatarCabinet v-if="activeView === 'avatars'" :storage-key="session.user?.id ?? 'default'" :media-url="api.mediaUrl.bind(api)" />
-          <WorldMemory v-if="activeView === 'worlds'" :events="activityEvents" :worlds="visibleWorlds" :favorite-ids="Object.keys(upstreamWorldFavorites)" @open-world="openWorldDetail" />
+          <WorldMemory v-if="activeView === 'worlds'" :events="activityEvents" :worlds="visibleWorlds" :friends="friends?.items ?? []" :favorite-ids="Object.keys(upstreamWorldFavorites)" @open-world="openWorldDetail" @resolve-world="resolveSearchWorld" />
           <article v-if="showFriends" class="panel friends-panel" :class="{ wide: activeView === 'friends' }">
             <div class="panel-heading compact">
               <div><span class="panel-kicker">好友</span><h2>好友状态</h2></div>
@@ -1111,6 +1130,7 @@ onBeforeUnmount(() => {
       :friend="selectedFriend"
       :profile="friendProfile"
       :world="friendWorld"
+      :worlds="visibleWorlds"
       :mutuals="mutualFriends"
       :loading="friendDetailLoading"
       :error="friendDetailError"
@@ -1142,6 +1162,7 @@ onBeforeUnmount(() => {
       :instance="selectedInstance"
       :instance-location="selectedInstanceLocation"
       :instance-loading="worldDetailLoading"
+      :instance-error="selectedInstanceError"
       :saving="worldFavoriteSaving"
       :upstream-saving="worldUpstreamSaving"
       :invite-sending="inviteSending"

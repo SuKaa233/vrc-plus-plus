@@ -35,7 +35,10 @@ const (
 	appName = "VRC++"
 )
 
-var version = "0.9.0-beta.1"
+var (
+	version           = "0.9.0-beta.2"
+	defaultUpdateURLs = ""
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -51,14 +54,7 @@ func run() error {
 	shouldUseDesktop := flag.Bool("desktop", true, "open the web UI in an embedded WebView2 window")
 	shouldOpenBrowser := flag.Bool("open-browser", false, "use the default browser instead of the desktop window")
 	shouldShowTray := flag.Bool("tray", true, "show a Windows notification area icon")
-	updateHelper := flag.Bool("update-helper", false, "run the detached update replacement helper")
-	replaceFrom := flag.String("replace-from", "", "staged executable path")
-	replaceTarget := flag.String("replace-target", "", "installed executable path")
-	waitPID := flag.Int("wait-pid", 0, "process id to wait for")
 	flag.Parse()
-	if *updateHelper {
-		return updater.RunHelper(*replaceFrom, *replaceTarget, *waitPID)
-	}
 	instance, primary, err := singleinstance.Acquire("VRCPlusPlus")
 	if err != nil {
 		return err
@@ -77,7 +73,7 @@ func run() error {
 	defer store.Close()
 
 	protector := security.NewProtector()
-	userAgent := envOrDefault("VRC_HARBOR_USER_AGENT", "VRCPlusPlus/0.9.0-beta.1 contact@example.invalid")
+	userAgent := envOrDefault("VRC_HARBOR_USER_AGENT", fmt.Sprintf("VRCPlusPlus/%s 2579362548@qq.com", version))
 	baseURL := envOrDefault("VRC_HARBOR_VRCHAT_BASE_URL", "https://api.vrchat.cloud/api/1")
 	vrcClient, err := vrchat.NewClient(baseURL, userAgent, store, protector)
 	if err != nil {
@@ -119,7 +115,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	updateService := updater.New(version, *dataDirectory, nil, logger)
+	updateService := updater.New(version, *dataDirectory, vrcClient.HTTPClientSnapshot(5*time.Minute), logger, defaultUpdateURLs)
 	shutdownRequest := make(chan struct{}, 1)
 	apiServer, err := localapi.New(localapi.Config{
 		AppName:      appName,
@@ -151,6 +147,7 @@ func run() error {
 	logger.Info("VRC++ gateway started", "url", localURL, "data", *dataDirectory)
 	appContext, cancelApp := context.WithCancel(context.Background())
 	defer cancelApp()
+	updateService.StartBackground(appContext, 12*time.Second, 6*time.Hour)
 	windowManager := desktop.New()
 	var desktopMode atomic.Bool
 	desktopMode.Store(*shouldUseDesktop && !*shouldOpenBrowser)
