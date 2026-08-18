@@ -8,15 +8,18 @@ const props = defineProps<{
   friends: Friend[]; events: ActivityEvent[]; results: UserProfile[]; statuses: Record<string, FriendStatus>
   groups: Group[]; groupMembers: GroupMember[]; expandedUser?: UserProfile | null; selectedGroupId?: string
   loading: boolean; expanding: boolean; actingId: string; clueError?: string; storageKey: string
+  scanMessage?: string
   mediaUrl: (value?: string) => string
 }>()
 const emit = defineEmits<{
   search: [query: string]; open: [user: UserProfile]; request: [user: UserProfile]
-  expandUser: [user: UserProfile]; loadGroup: [group: Group]
+  expandUser: [user: UserProfile]; loadGroup: [group: Group]; scanGroups: []
 }>()
 
 type SavedPerson = { id: string; displayName: string; imageUrl?: string; savedAt: string }
+type RadarCandidate = UserProfile & { sourceGroupIds: string[] }
 const query = ref('')
+const candidateQuery = ref('')
 const searched = ref(false)
 const saved = ref<SavedPerson[]>([])
 const friendIDs = computed(() => new Set(props.friends.map(item => item.id)))
@@ -32,11 +35,23 @@ const recentUsers = computed(() => {
   }
   return [...byID.values()].sort((a, b) => b.latest.localeCompare(a.latest)).slice(0, 24)
 })
-const publicCandidates = computed(() => props.groupMembers
-  .filter(item => !friendIDs.value.has(item.userId) && item.userId !== props.expandedUser?.id)
-  .map(item => ({ id: item.userId, displayName: item.displayName, status: item.status, statusDescription: item.statusDescription,
-    imageUrl: item.imageUrl || item.thumbnailUrl, iconUrl: item.iconUrl, profilePicOverride: item.profilePicOverride, profilePicOverrideThumbnail: item.profilePicOverrideThumbnail,
-    currentAvatarThumbnailImageUrl: item.currentAvatarThumbnailImageUrl, isFriend: false, allowAvatarCopying: false, trustLevel: 'visitor' } satisfies UserProfile)))
+const publicCandidates = computed<RadarCandidate[]>(() => {
+  const candidates = new Map<string, RadarCandidate>()
+  for (const item of props.groupMembers) {
+    if (friendIDs.value.has(item.userId) || item.userId === props.expandedUser?.id) continue
+    const current = candidates.get(item.userId)
+    if (current) {
+      if (item.groupId && !current.sourceGroupIds.includes(item.groupId)) current.sourceGroupIds.push(item.groupId)
+      continue
+    }
+    candidates.set(item.userId, { id: item.userId, displayName: item.displayName, status: item.status, statusDescription: item.statusDescription,
+      imageUrl: item.imageUrl || item.thumbnailUrl, iconUrl: item.iconUrl, profilePicOverride: item.profilePicOverride, profilePicOverrideThumbnail: item.profilePicOverrideThumbnail,
+      currentAvatarThumbnailImageUrl: item.currentAvatarThumbnailImageUrl, isFriend: false, allowAvatarCopying: false, trustLevel: 'visitor', sourceGroupIds: item.groupId ? [item.groupId] : [] })
+  }
+  const needle = candidateQuery.value.trim().toLocaleLowerCase()
+  return [...candidates.values()].filter(item => !needle || `${item.displayName} ${item.id}`.toLocaleLowerCase().includes(needle))
+    .sort((a, b) => b.sourceGroupIds.length - a.sourceGroupIds.length || a.displayName.localeCompare(b.displayName))
+})
 
 function loadSaved() { try { saved.value = JSON.parse(localStorage.getItem(storageName.value) || '[]') } catch { saved.value = [] } }
 function persistSaved() { localStorage.setItem(storageName.value, JSON.stringify(saved.value.slice(0, 200))) }
@@ -76,6 +91,10 @@ function activityText(user: UserProfile) {
 }
 function sourceText(value?: string[]) { return value?.length ? value.map(item => ({ user: '用户接口', publicProfile: '公开资料', privateProfile: '授权活动', mutuals: '共同关系' } as Record<string, string>)[item] || item).join(' · ') : '基础搜索结果' }
 function visibleBadges(user: UserProfile) { return (user.badges || []).filter(item => !item.hidden) }
+function candidateSource(user: RadarCandidate) {
+  const names = user.sourceGroupIds.map(id => props.groups.find(group => group.id === id)?.name || id)
+  return names.length > 1 ? `${names.length} 个共同公开群组：${names.join('、')}` : `来自 ${names[0] || '可见群组'}`
+}
 function copyID(value: string) { void navigator.clipboard?.writeText(value) }
 onMounted(loadSaved)
 watch(storageName, loadSaved)
@@ -122,10 +141,11 @@ watch(storageName, loadSaved)
           <div v-if="visibleBadges(expandedUser).length" class="badge-list"><span v-for="badge in visibleBadges(expandedUser)" :key="badge.id || badge.badgeId || badge.name"><img v-if="badge.imageUrl" :src="mediaUrl(badge.imageUrl)" alt="" /><BadgeCheck v-else :size="14" /><b>{{ badge.name || badge.description || '徽章' }}</b></span></div>
           <div v-if="expandedUser.tags?.length" class="technical-tags"><span v-for="tag in expandedUser.tags" :key="tag">{{ tag }}</span></div>
         </div>
-        <div v-if="clueError" class="clue-error">{{ clueError }}</div><div v-if="expanding" class="inline-loading"><LoaderCircle class="spin" :size="14" />正在补全关系数据…</div>
+        <div v-if="clueError" class="clue-error">{{ clueError }}</div><div v-if="expanding" class="inline-loading"><LoaderCircle class="spin" :size="14" />{{ scanMessage || '正在补全关系数据…' }}</div><div v-else-if="scanMessage" class="scan-summary"><Check :size="13" />{{ scanMessage }}</div>
         <div class="group-strip"><button v-for="group in groups" :key="group.id" :class="{ active: selectedGroupId === group.id }" @click="emit('loadGroup', group)"><span>{{ group.name }}</span><small>{{ group.memberCount ? `${group.memberCount} 人` : group.shortCode || '公开群组' }}</small></button><span v-if="!groups.length && !expanding">该用户没有对你公开群组列表</span></div>
-        <div v-if="selectedGroupId" class="group-result-title"><span>{{ selectedGroup?.name }}</span><small>最多读取 100 位有权查看的成员，已排除你的好友</small></div>
-        <div v-if="publicCandidates.length" class="candidate-grid"><button v-for="user in publicCandidates" :key="user.id" @click="emit('open', user)"><span class="mini-avatar"><img v-if="avatar(user)" :src="avatar(user)" alt="" loading="lazy" /><b v-else>{{ user.displayName.slice(0, 1) }}</b></span><span><strong>{{ user.displayName }}</strong><small>{{ user.statusDescription || '来自可见群组成员' }}</small></span><ExternalLink :size="13" /></button></div>
+        <div v-if="groups.length" class="radar-toolbar"><div><strong>关系雷达</strong><small>合并重复人物，共同出现群组越多排序越靠前</small></div><label><Search :size="13" /><input v-model="candidateQuery" placeholder="筛选候选人" /></label><button :disabled="expanding" @click="emit('scanGroups')"><LoaderCircle v-if="expanding" class="spin" :size="13" /><Link2 v-else :size="13" />扫描可见群组</button></div>
+        <div v-if="selectedGroupId" class="group-result-title"><span>{{ selectedGroup?.name }} · 已汇总 {{ publicCandidates.length }} 位圈外候选</span><small>每个群组最多读取 100 位，已排除你的好友</small></div>
+        <div v-if="publicCandidates.length" class="candidate-grid"><button v-for="user in publicCandidates" :key="user.id" @click="emit('open', user)"><span class="mini-avatar"><img v-if="avatar(user)" :src="avatar(user)" alt="" loading="lazy" /><b v-else>{{ user.displayName.slice(0, 1) }}</b></span><span><strong>{{ user.displayName }}</strong><small>{{ candidateSource(user) }}</small><em v-if="user.statusDescription">{{ user.statusDescription }}</em></span><b v-if="user.sourceGroupIds.length > 1" class="source-score">{{ user.sourceGroupIds.length }}</b><ExternalLink v-else :size="13" /></button></div>
       </template>
     </article>
 
@@ -147,4 +167,6 @@ watch(storageName, loadSaved)
 .represented-group{display:flex;align-items:center;gap:8px;margin:0 14px 10px;padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}.group-icon,.group-icon img{width:30px;height:30px;border-radius:7px}.group-icon{display:grid;place-items:center;overflow:hidden;background:var(--surface-muted)}.group-icon img{object-fit:cover}.represented-group small,.represented-group strong{display:block}.represented-group small{color:var(--muted);font-size:8px}.represented-group strong{margin-top:2px;font-size:9px}.badge-list,.technical-tags{display:flex;flex-wrap:wrap;gap:5px;margin:0 14px 10px}.badge-list span{display:flex;align-items:center;gap:5px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:8px}.badge-list img{width:18px;height:18px;object-fit:contain}.technical-tags{padding-top:9px;border-top:1px solid var(--line)}.technical-tags span{max-width:240px;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:900px){.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.fact-columns{grid-template-columns:1fr}}
 .inline-loading{display:flex;align-items:center;gap:6px;margin:0 0 8px;padding:7px 9px;border-radius:6px;background:var(--surface-muted);color:var(--muted);font-size:8px}
+.scan-summary{display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:7px 9px;border-radius:6px;background:color-mix(in srgb,var(--accent) 8%,var(--surface));color:var(--ink-soft);font-size:8px}.scan-summary svg{color:var(--accent)}.radar-toolbar{display:grid;grid-template-columns:minmax(190px,1fr) minmax(150px,.7fr) auto;align-items:center;gap:8px;margin-top:10px;padding:9px;border:1px solid var(--line);border-radius:7px;background:var(--surface-muted)}.radar-toolbar>div strong,.radar-toolbar>div small{display:block}.radar-toolbar>div strong{font-size:10px}.radar-toolbar>div small{margin-top:2px;color:var(--muted);font-size:8px}.radar-toolbar label{height:30px;display:flex;align-items:center;gap:6px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--muted)}.radar-toolbar input{min-width:0;width:100%;border:0;outline:0;background:transparent;color:var(--ink);font-size:9px}.radar-toolbar button{height:30px;display:flex;align-items:center;gap:5px;padding:0 9px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-soft);font-size:9px;cursor:pointer}.radar-toolbar button:disabled{opacity:.5}.candidate-grid em{display:block;margin-top:2px;overflow:hidden;color:var(--muted);font-size:8px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.source-score{display:grid;place-items:center;width:22px;height:22px;border-radius:999px;background:color-mix(in srgb,var(--accent) 14%,var(--surface));color:var(--accent);font-size:9px}
+@media(max-width:760px){.radar-toolbar{grid-template-columns:1fr}.radar-toolbar button{justify-content:center}}
 </style>

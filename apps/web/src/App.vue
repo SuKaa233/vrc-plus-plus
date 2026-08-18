@@ -205,6 +205,7 @@ const discoveryGroupMembers = ref<GroupMember[]>([]);
 const discoverySelectedGroupID = ref("");
 const discoveryExpanding = ref(false);
 const discoveryClueError = ref("");
+const discoveryScanMessage = ref("");
 type RecentAccessItem = {
   kind: "friend" | "world" | "avatar";
   id: string;
@@ -664,6 +665,7 @@ async function expandDiscoveryUser(profile: UserProfile) {
   discoveryGroups.value = [];
   discoveryGroupMembers.value = [];
   discoverySelectedGroupID.value = "";
+  discoveryScanMessage.value = "";
   discoveryExpandedUser.value = profile;
   const messages: string[] = [];
   try {
@@ -703,14 +705,56 @@ async function expandDiscoveryUser(profile: UserProfile) {
   }
 }
 
+function mergeDiscoveryMembers(items: GroupMember[]) {
+  const merged = new Map(
+    discoveryGroupMembers.value.map((item) => [
+      `${item.groupId || "unknown"}:${item.userId}`,
+      item,
+    ]),
+  );
+  for (const item of items)
+    merged.set(`${item.groupId || "unknown"}:${item.userId}`, item);
+  discoveryGroupMembers.value = [...merged.values()];
+}
+
+async function scanDiscoveryGroups() {
+  if (discoveryExpanding.value || !discoveryGroups.value.length) return;
+  const targets = discoveryGroups.value.slice(0, 5);
+  discoveryExpanding.value = true;
+  discoveryClueError.value = "";
+  discoveryGroupMembers.value = [];
+  const errors: string[] = [];
+  try {
+    for (let index = 0; index < targets.length; index += 1) {
+      const group = targets[index];
+      discoverySelectedGroupID.value = group.id;
+      discoveryScanMessage.value = `正在扫描 ${index + 1}/${targets.length}：${group.name}`;
+      try {
+        const result = await api.groupMembers(group.id, 100);
+        mergeDiscoveryMembers(result.items);
+      } catch {
+        errors.push(group.name);
+      }
+    }
+    discoveryScanMessage.value = `关系雷达完成：扫描 ${targets.length} 个群组，汇总 ${new Set(discoveryGroupMembers.value.map((item) => item.userId)).size} 位候选`;
+    if (discoveryGroups.value.length > targets.length)
+      discoveryScanMessage.value += `；为控制请求，本次未扫描其余 ${discoveryGroups.value.length - targets.length} 个群组`;
+    if (errors.length)
+      discoveryClueError.value = `${errors.join("、")} 的成员列表不可见`;
+  } finally {
+    discoveryExpanding.value = false;
+  }
+}
+
 async function loadDiscoveryGroup(group: Group) {
   discoveryExpanding.value = true;
   discoveryClueError.value = "";
   discoverySelectedGroupID.value = group.id;
-  discoveryGroupMembers.value = [];
+  discoveryScanMessage.value = `正在读取 ${group.name}`;
   try {
     const result = await api.groupMembers(group.id, 100);
-    discoveryGroupMembers.value = result.items;
+    mergeDiscoveryMembers(result.items);
+    discoveryScanMessage.value = `已合并 ${group.name} 的 ${result.items.length} 位可见成员`;
   } catch (cause) {
     discoveryClueError.value =
       cause instanceof Error
@@ -2085,6 +2129,7 @@ onBeforeUnmount(() => {
             :loading="discoveryLoading"
             :expanding="discoveryExpanding"
             :clue-error="discoveryClueError"
+            :scan-message="discoveryScanMessage"
             :acting-id="friendRequestActingID"
             :storage-key="session.user?.id ?? 'default'"
             :media-url="api.mediaUrl.bind(api)"
@@ -2093,6 +2138,7 @@ onBeforeUnmount(() => {
             @request="sendUserFriendRequest"
             @expand-user="expandDiscoveryUser"
             @load-group="loadDiscoveryGroup"
+            @scan-groups="scanDiscoveryGroups"
           />
           <ActivityView
             v-if="activeView === 'activity'"
