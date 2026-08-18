@@ -740,6 +740,8 @@ async function searchDiscoveryUsers(query: string) {
       ? await api.user(query)
       : await api.searchUsers(query);
     discoveryResults.value = result.items;
+    if (query.startsWith("usr_") && result.items[0])
+      await expandDiscoveryUser(result.items[0]);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "用户搜索失败";
   } finally {

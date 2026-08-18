@@ -88,6 +88,11 @@ export function relationshipInsights(input:StrangerGraphInput):RelationshipInsig
   for (const member of input.members) groupFrequency.set(member.userId, (groupFrequency.get(member.userId) || 0) + 1)
   const bridge = [...groupFrequency.entries()].sort((a,b)=>b[1]-a[1])[0]
   const profileFields = [input.target.bio,input.target.pronouns,input.target.languages?.length,input.target.badges?.length,input.target.representedGroup,input.target.statusDescription,input.target.dateJoined].filter(Boolean).length
+  const graph = buildStrangerGraph(input)
+  const coPresenceCount = graph.edges.filter(item=>item.kind==='co_presence').length
+  const memberCounts = new Map<string,number>()
+  for (const member of input.members) if (member.groupId) memberCounts.set(member.groupId,(memberCounts.get(member.groupId)||0)+1)
+  const largestGroup = [...memberCounts.entries()].sort((a,b)=>b[1]-a[1])[0]
   const insights:RelationshipInsight[] = []
   if (mutualCount) insights.push({ id:'mutual-route', title:'共同好友是最直接的关系路径', summary:`当前可确认 ${mutualCount} 位共同好友；这表示你们之间存在可验证的社交桥梁，但不代表双方实际熟悉。`, confidence:mutualCount>=3?'高':'中', evidence:[`共同好友接口返回 ${mutualCount} 位`, ...input.mutuals.slice(0,3).map(item=>item.displayName)], tone:'strong' })
   if (groupCount) insights.push({ id:'group-overlap', title:'公开圈层存在重叠', summary:`目标公开了 ${input.groups.length} 个当前账号可见群组，接口显示共同群组计数 ${groupCount}。适合从群组活动和公开成员交集继续观察。`, confidence:input.groups.length>=2?'高':'中', evidence:input.groups.slice(0,4).map(item=>item.name), tone:'balanced' })
@@ -96,6 +101,22 @@ export function relationshipInsights(input:StrangerGraphInput):RelationshipInsig
     insights.push({ id:'circle-bridge', title:'发现跨圈层桥接人物', summary:`${person?.displayName || bridge[0]} 同时出现在 ${bridge[1]} 个可见群组中，是当前公开关系图里的高连接候选。`, confidence:'中', evidence:[`${bridge[1]} 个公开群组重复出现`], tone:'strong' })
   }
   if (targetEvents.length) insights.push({ id:'local-observation', title:'存在本机活动证据', summary:`本机日志记录到该用户 ${targetEvents.length} 条事件。它只能证明你的客户端观察到相关活动，不能还原完整上线轨迹。`, confidence:'高', evidence:targetEvents.slice(0,3).map(item=>`${item.summary} · ${new Date(item.observedAt).toLocaleString('zh-CN')}`), tone:'balanced' })
+  const structure = mutualCount>0&&groupCount>0?'混合桥接型':mutualCount>0?'共同好友主导型':groupCount>0?'公开群组主导型':'弱连接型'
+  insights.push({ id:'network-shape', title:`关系结构偏向“${structure}”`, summary:structure==='混合桥接型'?'共同好友与公开群组两类路径同时存在，关系图不依赖单一来源。':structure==='共同好友主导型'?'当前主要证据来自共同好友，公开圈层信息较少。':structure==='公开群组主导型'?'当前主要证据来自公开群组，尚无共同好友明细支持。':'当前缺少稳定桥接节点，关系图主要用于记录后续证据。', confidence:(mutualCount||groupCount)?'中':'低', evidence:[`${mutualCount} 位共同好友`,`${groupCount} 个共同群组`,`${targetEvents.length} 条本机事件`], tone:(mutualCount&&groupCount)?'strong':'balanced' })
+  if (largestGroup) {
+    const group = input.groups.find(item=>item.id===largestGroup[0])
+    const total = Math.max(1,input.members.length)
+    const ratio = Math.round(largestGroup[1]/total*100)
+    insights.push({ id:'circle-concentration', title:ratio>=60?'可见关系集中在单一圈层':'可见关系分布在多个圈层', summary:`${group?.name||largestGroup[0]} 占当前可见群组成员记录的 ${ratio}%。这反映本次采样的集中度，不代表目标完整社交结构。`, confidence:'中', evidence:[`${group?.name||largestGroup[0]}：${largestGroup[1]} 条成员记录`,`总样本：${input.members.length} 条`], tone:'balanced' })
+  }
+  if (coPresenceCount) insights.push({ id:'co-presence', title:'发现重复同实例线索', summary:`关系图发现 ${coPresenceCount} 条目标与候选人在同一实例、30 分钟窗口内出现的日志连线。它支持“曾被同时观察”，不能证明双方发生互动。`, confidence:'中', evidence:[`${coPresenceCount} 条同实例时间窗口匹配`,'数据来自本机 VRChat 日志'], tone:'strong' })
+  if (input.target.dateJoined) {
+    const joined = new Date(input.target.dateJoined)
+    const years = Number.isNaN(joined.getTime())?0:Math.max(0,Math.floor((Date.now()-joined.getTime())/(365.25*24*60*60*1000)))
+    insights.push({ id:'account-maturity', title:'账号历史与信任信息可交叉参考', summary:`账号约有 ${years} 年历史，当前信任显示为 ${input.target.trustLevel}。这只能描述账号公开元数据，不能直接代表个人可信度。`, confidence:'高', evidence:[`加入日期：${input.target.dateJoined}`,`信任字段：${input.target.trustLevel}`], tone:'balanced' })
+  }
+  const visibilitySignals = Number(Boolean(input.target.bio))+Number(Boolean(input.target.languages?.length))+Number(Boolean(input.groups.length))+Number(input.target.activityVisibility==='visible')
+  insights.push({ id:'social-visibility', title:visibilitySignals>=3?'对当前账号公开的信息较丰富':'对当前账号公开的信息有限', summary:`4 类可见度信号中读取到 ${visibilitySignals} 类，包括简介、语言、群组和活动可见性。可见度受隐私设置和双方关系影响。`, confidence:'中', evidence:[`简介：${input.target.bio?'有':'无'}`,`语言：${input.target.languages?.length?'有':'无'}`,`群组：${input.groups.length}`,`活动：${input.target.activityVisibility||'未知'}`], tone:visibilitySignals>=3?'strong':'caution' })
   insights.push({ id:'profile-openness', title:profileFields>=5?'公开资料较完整':'公开资料较克制', summary:`当前读取到 ${profileFields}/7 类核心公开资料，活动信息${input.target.activityVisibility==='restricted'?'受限':'对当前账号可见'}。`, confidence:'中', evidence:[`资料来源：${input.target.profileSources?.join('、') || '基础用户接口'}`, `公开语言：${input.target.languages?.join('、') || '无'}`], tone:'balanced' })
   const routes = Number(mutualCount>0)+Number(groupCount>0)+Number(targetEvents.length>0)
   insights.push({ id:'contact-route', title:routes>=2?'存在多条可解释的接触路径':'当前关系证据仍然有限', summary:routes>=2?'共同好友、公开群组或本机记录中至少有两类证据。建议通过公开群组或共同好友自然确认关系，不依据图谱直接判断亲疏。':'目前不足以判断目标与你的实际关系，继续积累公开群组或本机同房证据更可靠。', confidence:routes>=2?'中':'低', evidence:[`${routes}/3 类关系来源有数据`], tone:routes>=2?'strong':'caution' })

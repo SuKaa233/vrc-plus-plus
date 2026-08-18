@@ -20,6 +20,9 @@ describe('stranger relationship graph', () => {
   it('keeps inferences evidence-labelled and includes coverage caveat', () => {
     const items = relationshipInsights(input)
     expect(items.some(item=>item.id==='mutual-route' && item.confidence==='中')).toBe(true)
+    expect(items.some(item=>item.id==='network-shape')).toBe(true)
+    expect(items.some(item=>item.id==='circle-concentration')).toBe(true)
+    expect(items.some(item=>item.id==='social-visibility')).toBe(true)
     expect(items.at(-1)?.id).toBe('coverage')
   })
 })
