@@ -202,6 +202,7 @@ const discoveryLoading = ref(false);
 const discoveryExpandedUser = ref<UserProfile | null>(null);
 const discoveryGroups = ref<Group[]>([]);
 const discoveryGroupMembers = ref<GroupMember[]>([]);
+const discoveryMutuals = ref<MutualFriend[]>([]);
 const discoverySelectedGroupID = ref("");
 const discoveryExpanding = ref(false);
 const discoveryClueError = ref("");
@@ -664,6 +665,7 @@ async function expandDiscoveryUser(profile: UserProfile) {
   discoveryClueError.value = "";
   discoveryGroups.value = [];
   discoveryGroupMembers.value = [];
+  discoveryMutuals.value = [];
   discoverySelectedGroupID.value = "";
   discoveryScanMessage.value = "";
   discoveryExpandedUser.value = profile;
@@ -673,6 +675,14 @@ async function expandDiscoveryUser(profile: UserProfile) {
     discoveryExpandedUser.value = detail.items[0] ?? profile;
   } catch (cause) {
     messages.push(cause instanceof Error ? cause.message : "公开档案未完整读取");
+  }
+  try {
+    const mutuals = await api.mutualFriends(profile.id);
+    discoveryMutuals.value = mutuals.items;
+  } catch (cause) {
+    messages.push(
+      cause instanceof Error ? cause.message : "共同好友明细未公开",
+    );
   }
   try {
     const groups = await api.groups(profile.id);
@@ -2124,6 +2134,12 @@ onBeforeUnmount(() => {
             :statuses="discoveryStatuses"
             :groups="discoveryGroups"
             :group-members="discoveryGroupMembers"
+            :mutuals="discoveryMutuals"
+            :self="{
+              id: session.user?.id ?? 'self',
+              displayName: session.user?.displayName ?? '我',
+              imageUrl: session.user?.currentAvatarThumbnailImageUrl,
+            }"
             :expanded-user="discoveryExpandedUser"
             :selected-group-id="discoverySelectedGroupID"
             :loading="discoveryLoading"
@@ -2139,6 +2155,7 @@ onBeforeUnmount(() => {
             @expand-user="expandDiscoveryUser"
             @load-group="loadDiscoveryGroup"
             @scan-groups="scanDiscoveryGroups"
+            @resolve-user="resolveSearchUser"
           />
           <ActivityView
             v-if="activeView === 'activity'"

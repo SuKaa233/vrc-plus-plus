@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { BadgeCheck, Bookmark, BookmarkCheck, Check, Clock3, Copy, ExternalLink, Globe2, Languages, Link2, LoaderCircle, Search, ShieldCheck, Sparkles, UserPlus, Users } from '@lucide/vue'
-import type { ActivityEvent, Friend, FriendStatus, Group, GroupMember, UserProfile } from './api'
+import type { ActivityEvent, Friend, FriendStatus, Group, GroupMember, MutualFriend, UserProfile } from './api'
 import { optimizedVrcImageUrl, preferredFriendAvatar } from './media'
+import StrangerNetworkGraph from './StrangerNetworkGraph.vue'
 
 const props = defineProps<{
   friends: Friend[]; events: ActivityEvent[]; results: UserProfile[]; statuses: Record<string, FriendStatus>
   groups: Group[]; groupMembers: GroupMember[]; expandedUser?: UserProfile | null; selectedGroupId?: string
+  mutuals: MutualFriend[]; self:{ id:string; displayName:string; imageUrl?:string }
   loading: boolean; expanding: boolean; actingId: string; clueError?: string; storageKey: string
   scanMessage?: string
   mediaUrl: (value?: string) => string
 }>()
 const emit = defineEmits<{
   search: [query: string]; open: [user: UserProfile]; request: [user: UserProfile]
-  expandUser: [user: UserProfile]; loadGroup: [group: Group]; scanGroups: []
+  expandUser: [user: UserProfile]; loadGroup: [group: Group]; scanGroups: []; resolveUser:[userId:string]
 }>()
 
 type SavedPerson = { id: string; displayName: string; imageUrl?: string; savedAt: string }
@@ -146,6 +148,7 @@ watch(storageName, loadSaved)
         <div v-if="groups.length" class="radar-toolbar"><div><strong>关系雷达</strong><small>合并重复人物，共同出现群组越多排序越靠前</small></div><label><Search :size="13" /><input v-model="candidateQuery" placeholder="筛选候选人" /></label><button :disabled="expanding" @click="emit('scanGroups')"><LoaderCircle v-if="expanding" class="spin" :size="13" /><Link2 v-else :size="13" />扫描可见群组</button></div>
         <div v-if="selectedGroupId" class="group-result-title"><span>{{ selectedGroup?.name }} · 已汇总 {{ publicCandidates.length }} 位圈外候选</span><small>每个群组最多读取 100 位，已排除你的好友</small></div>
         <div v-if="publicCandidates.length" class="candidate-grid"><button v-for="user in publicCandidates" :key="user.id" @click="emit('open', user)"><span class="mini-avatar"><img v-if="avatar(user)" :src="avatar(user)" alt="" loading="lazy" /><b v-else>{{ user.displayName.slice(0, 1) }}</b></span><span><strong>{{ user.displayName }}</strong><small>{{ candidateSource(user) }}</small><em v-if="user.statusDescription">{{ user.statusDescription }}</em></span><b v-if="user.sourceGroupIds.length > 1" class="source-score">{{ user.sourceGroupIds.length }}</b><ExternalLink v-else :size="13" /></button></div>
+        <StrangerNetworkGraph v-if="expandedUser" :self="self" :target="expandedUser" :mutuals="mutuals" :groups="groups" :members="groupMembers" :events="events" :media-url="mediaUrl" @open-user="emit('resolveUser', $event)" />
       </template>
     </article>
 
