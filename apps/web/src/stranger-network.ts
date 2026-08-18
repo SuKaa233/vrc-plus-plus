@@ -24,6 +24,14 @@ function avatar(value:{ imageUrl?:string; profilePicOverride?:string; profilePic
   return value.profilePicOverrideThumbnail || value.profilePicOverride || value.currentAvatarThumbnailImageUrl || value.imageUrl
 }
 
+function overlapsInInstance(left:ActivityEvent[], right:ActivityEvent[]) {
+  return left.some(event => right.some(target => {
+    const samePlace = Boolean(event.location && target.location && event.location === target.location)
+    const close = Math.abs(new Date(event.observedAt).getTime() - new Date(target.observedAt).getTime()) <= 30*60*1000
+    return samePlace && close
+  }))
+}
+
 export function buildStrangerGraph(input:StrangerGraphInput):StrangerGraph {
   const nodes:StrangerGraphNode[] = [
     { id:input.self.id, label:input.self.displayName, kind:'self', x:115, y:290, imageUrl:input.self.imageUrl, detail:'你自己' },
@@ -69,12 +77,11 @@ export function buildStrangerGraph(input:StrangerGraphInput):StrangerGraph {
   for (const event of input.events) if (event.userId) eventByUser.set(event.userId, [...(eventByUser.get(event.userId) || []), event])
   const targetEvents = eventByUser.get(input.target.id) || []
   for (const candidate of candidates) {
-    const matches = (eventByUser.get(candidate.userId) || []).some(event => targetEvents.some(target => {
-      const samePlace = event.location && target.location && event.location === target.location
-      const close = Math.abs(new Date(event.observedAt).getTime() - new Date(target.observedAt).getTime()) <= 30*60*1000
-      return samePlace && close
-    }))
+    const matches = overlapsInInstance(eventByUser.get(candidate.userId) || [], targetEvents)
     if (matches) edges.push({ source:input.target.id, target:candidate.userId, kind:'co_presence', label:'日志同实例', evidence:'observed' })
+  }
+  for (const mutual of mutuals) {
+    if (overlapsInInstance(eventByUser.get(mutual.id) || [], targetEvents)) edges.push({ source:input.target.id, target:mutual.id, kind:'co_presence', label:'共同好友同实例', evidence:'observed' })
   }
   const visible = new Set(nodes.map(item => item.id))
   return { nodes, edges:edges.filter(edge => visible.has(edge.source) && visible.has(edge.target)), hiddenNodes:Math.max(0,input.mutuals.length-mutuals.length)+Math.max(0,memberByID.size-candidates.length) }
@@ -90,11 +97,19 @@ export function relationshipInsights(input:StrangerGraphInput):RelationshipInsig
   const profileFields = [input.target.bio,input.target.pronouns,input.target.languages?.length,input.target.badges?.length,input.target.representedGroup,input.target.statusDescription,input.target.dateJoined].filter(Boolean).length
   const graph = buildStrangerGraph(input)
   const coPresenceCount = graph.edges.filter(item=>item.kind==='co_presence').length
+  const mutualIDs = new Set(input.mutuals.map(item=>item.id))
+  const mutualsInGroups = new Set(input.members.filter(item=>mutualIDs.has(item.userId)).map(item=>item.userId))
+  const mutualCoPresence = new Set(graph.edges.filter(item=>item.kind==='co_presence' && mutualIDs.has(item.target)).map(item=>item.target))
+  const visibleMutualStatuses = input.mutuals.filter(item=>item.status && item.status!=='offline')
   const memberCounts = new Map<string,number>()
   for (const member of input.members) if (member.groupId) memberCounts.set(member.groupId,(memberCounts.get(member.groupId)||0)+1)
   const largestGroup = [...memberCounts.entries()].sort((a,b)=>b[1]-a[1])[0]
   const insights:RelationshipInsight[] = []
   if (mutualCount) insights.push({ id:'mutual-route', title:'共同好友是最直接的关系路径', summary:`当前可确认 ${mutualCount} 位共同好友；这表示你们之间存在可验证的社交桥梁，但不代表双方实际熟悉。`, confidence:mutualCount>=3?'高':'中', evidence:[`共同好友接口返回 ${mutualCount} 位`, ...input.mutuals.slice(0,3).map(item=>item.displayName)], tone:'strong' })
+  insights.push({ id:'friend-slice', title:mutualCount?'已读取对方好友关系中可验证的交集':'未取得可验证的好友交集', summary:mutualCount?`当前账号能够确认 ${mutualCount} 位“既是你的好友、也是对方好友”的人物。VRChat 不向当前账号返回对方的完整好友列表，因此其余好友不能列出或估算。`:'共同好友接口没有返回明细；这可能是确实没有交集、隐私限制或接口不可用，不能解释为对方没有好友。', confidence:'高', evidence:[`共同好友计数：${mutualCount}`,`共同好友明细：${input.mutuals.length} 位`,'完整好友列表：接口未提供'], tone:'caution' })
+  if (mutualsInGroups.size) insights.push({ id:'mutual-cross-source', title:'共同好友获得第二来源交叉印证', summary:`${mutualsInGroups.size} 位共同好友还出现在目标的可见群组成员中。好友交集与群组成员是两类独立接口，这些人物是更稳定的关系桥梁。`, confidence:'高', evidence:[...input.mutuals.filter(item=>mutualsInGroups.has(item.id)).slice(0,4).map(item=>`${item.displayName}：共同好友 + 可见群组成员`)], tone:'strong' })
+  if (mutualCoPresence.size) insights.push({ id:'mutual-co-presence', title:'共同好友与目标存在同实例观察', summary:`本机日志发现 ${mutualCoPresence.size} 位共同好友曾与目标在同一实例、30 分钟窗口内出现。它比单纯群组重叠更接近真实活动证据，但仍不能证明双方交谈。`, confidence:'中', evidence:[...input.mutuals.filter(item=>mutualCoPresence.has(item.id)).slice(0,4).map(item=>`${item.displayName}：共同好友 + 同实例时间窗口`)], tone:'strong' })
+  if (visibleMutualStatuses.length) insights.push({ id:'mutual-activity', title:'部分共同好友当前状态可见', summary:`共同好友明细中有 ${visibleMutualStatuses.length} 位显示非离线状态，可作为当前可联系桥梁参考；状态随时变化，不代表正在与目标互动。`, confidence:'高', evidence:visibleMutualStatuses.slice(0,4).map(item=>`${item.displayName}：${item.status}`), tone:'balanced' })
   if (groupCount) insights.push({ id:'group-overlap', title:'公开圈层存在重叠', summary:`目标公开了 ${input.groups.length} 个当前账号可见群组，接口显示共同群组计数 ${groupCount}。适合从群组活动和公开成员交集继续观察。`, confidence:input.groups.length>=2?'高':'中', evidence:input.groups.slice(0,4).map(item=>item.name), tone:'balanced' })
   if (bridge && bridge[1] > 1) {
     const person = input.members.find(item=>item.userId===bridge[0])

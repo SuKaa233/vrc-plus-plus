@@ -203,6 +203,7 @@ const discoveryExpandedUser = ref<UserProfile | null>(null);
 const discoveryGroups = ref<Group[]>([]);
 const discoveryGroupMembers = ref<GroupMember[]>([]);
 const discoveryMutuals = ref<MutualFriend[]>([]);
+const discoveryMutualMeta = ref({ source: "", fetchedAt: "", stale: false, optedOut: false, message: "" });
 const discoverySelectedGroupID = ref("");
 const discoveryExpanding = ref(false);
 const discoveryClueError = ref("");
@@ -755,6 +756,7 @@ async function expandDiscoveryUser(profile: UserProfile) {
   discoveryGroups.value = [];
   discoveryGroupMembers.value = [];
   discoveryMutuals.value = [];
+  discoveryMutualMeta.value = { source: "", fetchedAt: "", stale: false, optedOut: false, message: "" };
   discoverySelectedGroupID.value = "";
   discoveryScanMessage.value = "";
   discoveryExpandedUser.value = profile;
@@ -768,6 +770,7 @@ async function expandDiscoveryUser(profile: UserProfile) {
   try {
     const mutuals = await api.mutualFriends(profile.id);
     discoveryMutuals.value = mutuals.items;
+    discoveryMutualMeta.value = { source: mutuals.source, fetchedAt: mutuals.fetchedAt, stale: mutuals.stale, optedOut: Boolean(mutuals.optedOut), message: mutuals.message || "" };
   } catch (cause) {
     messages.push(
       cause instanceof Error ? cause.message : "共同好友明细未公开",
@@ -800,6 +803,25 @@ async function expandDiscoveryUser(profile: UserProfile) {
     );
   } finally {
     discoveryClueError.value = messages.join("；");
+    discoveryExpanding.value = false;
+  }
+}
+
+async function refreshDiscoveryMutuals() {
+  const profile = discoveryExpandedUser.value;
+  if (!profile || discoveryExpanding.value) return;
+  discoveryExpanding.value = true;
+  discoveryScanMessage.value = "正在刷新共同好友与可验证关系…";
+  try {
+    const mutuals = await api.mutualFriends(profile.id, true);
+    discoveryMutuals.value = mutuals.items;
+    discoveryMutualMeta.value = { source: mutuals.source, fetchedAt: mutuals.fetchedAt, stale: mutuals.stale, optedOut: Boolean(mutuals.optedOut), message: mutuals.message || "" };
+    discoveryScanMessage.value = mutuals.optedOut
+      ? (mutuals.message || "对方未共享共同好友明细")
+      : `已确认 ${mutuals.items.length} 位共同好友；这只是对方好友列表中当前账号可验证的交集`;
+  } catch (cause) {
+    discoveryClueError.value = cause instanceof Error ? cause.message : "共同好友刷新失败";
+  } finally {
     discoveryExpanding.value = false;
   }
 }
@@ -2224,6 +2246,7 @@ onBeforeUnmount(() => {
             :groups="discoveryGroups"
             :group-members="discoveryGroupMembers"
             :mutuals="discoveryMutuals"
+            :mutual-meta="discoveryMutualMeta"
             :self="{
               id: session.user?.id ?? 'self',
               displayName: session.user?.displayName ?? '我',
@@ -2246,6 +2269,7 @@ onBeforeUnmount(() => {
             @expand-user="expandDiscoveryUser"
             @load-group="loadDiscoveryGroup"
             @scan-groups="scanDiscoveryGroups"
+            @refresh-mutuals="refreshDiscoveryMutuals"
             @resolve-user="resolveSearchUser"
           />
           <ActivityView

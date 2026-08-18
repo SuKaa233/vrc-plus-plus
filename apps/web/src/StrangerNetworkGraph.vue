@@ -40,21 +40,23 @@ function toneLabel(value:string) { return value==='strong'?'关系信号':value=
 function verdictLabel(item:RelationshipInsight) { return item.tone==='caution'?'边界条件成立':item.confidence==='高'?'现有证据支持':item.confidence==='中'?'部分证据支持':'证据仍然不足' }
 function verdictClass(item:RelationshipInsight) { return item.tone==='caution'?'caution':item.confidence==='高'?'supported':item.confidence==='中'?'partial':'insufficient' }
 function evidenceSource(item:RelationshipInsight) {
-  if (['mutual-route','network-shape','contact-route'].includes(item.id)) return '共同好友与关系计数接口'
+  if (['mutual-route','friend-slice','mutual-activity','network-shape','contact-route'].includes(item.id)) return '共同好友与关系计数接口'
+  if (item.id==='mutual-cross-source') return '共同好友接口 + 可见群组成员接口'
+  if (item.id==='mutual-co-presence') return '共同好友接口 + 本机 VRChat 活动日志'
   if (['group-overlap','circle-bridge','circle-concentration'].includes(item.id)) return '用户公开群组与可见成员接口'
   if (['local-observation','co-presence'].includes(item.id)) return '本机 VRChat 活动日志'
   return '用户公开资料接口'
 }
 function limitations(item:RelationshipInsight) {
-  if (item.id==='co-presence'||item.id==='local-observation') return ['日志只能证明本机在某个时间点观察到事件','同时出现不等于双方交谈或发生互动','客户端未运行期间没有覆盖']
+  if (item.id==='co-presence'||item.id==='local-observation'||item.id==='mutual-co-presence') return ['日志只能证明本机在某个时间点观察到事件','同时出现不等于双方交谈或发生互动','客户端未运行期间没有覆盖']
   if (item.id.includes('group')||item.id.includes('circle')) return ['群组成员关系不等于好友关系','隐藏群组和不可见成员不在样本中','大型群组的公开成员只读取有限页']
-  if (item.id==='mutual-route') return ['共同好友不代表目标与桥接人物经常互动','接口结果受双方隐私设置影响','无法据此判断关系亲疏']
+  if (['mutual-route','friend-slice','mutual-cross-source','mutual-activity'].includes(item.id)) return ['共同好友只展示双方好友列表的交集，不是对方完整好友列表','接口结果受双方隐私设置影响','无法据此判断关系亲疏或互动频率']
   return ['只使用当前账号可见字段','资料缺失可能来自隐私设置而非真实不存在','结论不能扩展到现实身份或个人品质']
 }
 function verificationSteps(item:RelationshipInsight) {
-  if (item.id==='co-presence'||item.id==='local-observation') return ['继续积累不同日期的本机日志','核对事件时间和实例 ID','等待重复证据后再提高可信度']
+  if (item.id==='co-presence'||item.id==='local-observation'||item.id==='mutual-co-presence') return ['继续积累不同日期的本机日志','核对事件时间和实例 ID','等待重复证据后再提高可信度']
   if (item.id.includes('group')||item.id.includes('circle')) return ['重新扫描可见群组确认成员仍然存在','检查该人物是否跨多个独立群组重复出现','结合共同好友或同房日志交叉验证']
-  if (item.id==='mutual-route') return ['刷新共同好友接口','观察桥接节点是否在不同证据来源重复出现','通过正常社交渠道确认，而非依赖推测']
+  if (['mutual-route','friend-slice','mutual-cross-source','mutual-activity'].includes(item.id)) return ['刷新共同好友接口','观察桥接节点是否在不同证据来源重复出现','通过正常社交渠道确认，而非依赖推测']
   return ['刷新目标公开资料','比较后续快照是否稳定','寻找第二种独立数据来源交叉验证']
 }
 </script>
