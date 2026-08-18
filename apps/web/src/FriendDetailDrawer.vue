@@ -97,6 +97,7 @@ onBeforeUnmount(() => {
 
 const displayName = computed(() => props.profile?.displayName || props.friend.displayName)
 const location = computed(() => props.profile?.location || props.friend.location || '')
+const activityState = computed(() => props.profile?.state || (props.friend.online ? 'online' : 'offline'))
 const avatar = computed(() => props.mediaUrl(
   props.profile?.profilePicOverrideThumbnail
   || optimizedVrcImageUrl(props.profile?.profilePicOverride)
@@ -128,7 +129,10 @@ function dateLabel(value?: string) {
 }
 
 function locationLabel(value: string) {
-  if (!value || value === 'offline') return '当前离线'
+  if (!value && activityState.value === 'active') return '网页或移动端活跃 · 位置不可用'
+  if (!value && props.friend.online) return '当前在线 · 位置受限'
+  if (!value) return props.profile?.activityVisibility === 'restricted' ? '活动信息受限或当前离线' : '当前显示离线'
+  if (value === 'offline') return '当前显示离线'
   if (value === 'private') return '位于私人实例'
   if (value === 'traveling') return '正在切换世界'
   if (!value.startsWith('wrld_')) return '在线位置不可见'
@@ -160,6 +164,11 @@ function dateTimeLabel(value?: string) {
   return new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
+function sourceLabel(value?: string[]) {
+  if (!value?.length) return '基础用户资料'
+  return value.map((item) => ({ user: '用户接口', 'public-profile': '公开资料', 'private-profile': '授权可见资料', mutuals: '共同关系' } as Record<string,string>)[item] || item).join(' · ')
+}
+
 function durationLabel(minutes: number) {
   if (minutes < 60) return `${minutes} 分钟`
   return `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分`
@@ -170,7 +179,7 @@ function durationLabel(minutes: number) {
   <div class="detail-backdrop" @click.self="$emit('close')">
     <aside class="friend-detail" role="dialog" aria-modal="true" :aria-label="`${displayName} 的好友详情`">
       <header class="detail-toolbar">
-        <div><span>好友资料</span><small>{{ profile ? '来自 VRChat 用户资料' : '正在读取完整资料' }}</small></div>
+        <div><span>人物资料</span><small>{{ profile ? sourceLabel(profile.profileSources) : '正在读取完整资料' }}</small></div>
         <button type="button" title="关闭" @click="$emit('close')"><X :size="19" /></button>
       </header>
 
@@ -221,6 +230,21 @@ function durationLabel(minutes: number) {
           <div><CalendarDays :size="15" /><span>最近活动</span><strong>{{ dateLabel(profile?.lastActivity || profile?.lastLogin) }}</strong></div>
           <div><Globe2 :size="15" /><span>头像克隆</span><strong>{{ profile?.allowAvatarCopying ? '允许' : '不允许' }}</strong></div>
           <div><Monitor :size="15" /><span>在线状态</span><strong>{{ statusLabel(profile?.status || friend.status) }}</strong></div>
+          <div><Smartphone :size="15" /><span>最后移动端活动</span><strong>{{ dateLabel(profile?.lastMobile || friend.lastMobile) }}</strong></div>
+          <div><Users :size="15" /><span>共同关系</span><strong>{{ profile?.mutualFriendCount ?? mutuals.length }} 好友 · {{ profile?.mutualGroupCount ?? 0 }} 群组</strong></div>
+        </section>
+
+        <section v-if="profile" class="detail-section public-profile-grid">
+          <div class="section-title"><ShieldCheck :size="16" /><strong>公开资料扩展</strong><span>{{ profile.activityVisibility === 'restricted' ? '活动信息受限' : '当前账号可见' }}</span></div>
+          <div class="profile-facts">
+            <div><span>语言</span><strong>{{ profile.languages?.length ? profile.languages.join('、') : '未公开' }}</strong></div>
+            <div><span>代表群组</span><strong>{{ profile.representedGroup?.name || '未公开' }}</strong></div>
+            <div><span>VRChat+</span><strong>{{ profile.hasVrcPlus ? '已订阅' : '未显示' }}</strong></div>
+            <div><span>创作者状态</span><strong>{{ profile.isEconomyCreator ? '经济系统创作者' : '未显示' }}</strong></div>
+            <div><span>最后登录</span><strong>{{ dateLabel(profile.lastLogin || friend.lastLogin) }}</strong></div>
+            <div><span>资料来源</span><strong>{{ sourceLabel(profile.profileSources) }}</strong></div>
+          </div>
+          <div v-if="profile.badges?.length" class="public-badges"><span v-for="badge in profile.badges.filter(item => !item.hidden)" :key="badge.id || badge.badgeId || badge.name"><img v-if="badge.imageUrl" :src="mediaUrl(badge.imageUrl)" alt="" /><b>{{ badge.name || badge.description || '徽章' }}</b></span></div>
         </section>
 
         <section v-if="canBoop" class="detail-section boop-section">
@@ -306,6 +330,7 @@ function durationLabel(minutes: number) {
 .muted-copy, .bio-copy { color: var(--muted); margin: 9px 0 0; font-size: 10px; line-height: 1.7; white-space: pre-wrap; }.bio-copy { color: var(--ink-soft); }
 .bio-links { margin-top: 11px; display: grid; gap: 6px; }.bio-links a { min-width: 0; color: var(--accent); text-decoration: none; font-size: 9px; display: flex; align-items: center; gap: 6px; }.bio-links a svg:last-child { margin-left: auto; }.bio-links a { overflow-wrap: anywhere; }
 .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }.meta-grid > div { min-width: 0; padding: 10px; background: var(--surface-muted); border-radius: 8px; display: grid; grid-template-columns: 18px 1fr; align-items: center; }.meta-grid svg { color: var(--accent); grid-row: 1 / 3; }.meta-grid span { color: var(--muted); font-size: 8px; }.meta-grid strong { margin-top: 3px; font-size: 9px; }
+.public-profile-grid{display:grid;gap:10px}.profile-facts{display:grid;grid-template-columns:1fr 1fr;gap:7px}.profile-facts>div{padding:9px;background:var(--surface-muted);border-radius:7px}.profile-facts span,.profile-facts strong{display:block}.profile-facts span{color:var(--muted);font-size:9px}.profile-facts strong{margin-top:4px;font-size:10px;overflow-wrap:anywhere}.public-badges{display:flex;flex-wrap:wrap;gap:6px}.public-badges span{display:inline-flex;align-items:center;gap:5px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;font-size:9px}.public-badges img{width:18px;height:18px;border-radius:4px;object-fit:cover}
 .local-insights{display:grid;gap:10px}.insight-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.insight-grid>div{min-width:0;padding:9px;background:var(--surface-muted);border-radius:7px;display:grid;grid-template-columns:18px 1fr;align-items:center}.insight-grid svg{grid-row:1/3;color:var(--muted)}.insight-grid span{color:var(--muted);font-size:8px}.insight-grid strong{margin-top:3px;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.common-worlds,.evidence-strip{display:flex;flex-wrap:wrap;gap:5px}.common-worlds span,.evidence-strip span{display:inline-flex;align-items:center;gap:4px;padding:4px 6px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:8px}.evidence-strip span{background:var(--surface-muted)}.replay-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:3px}.replay-toolbar>strong{font-size:9px}.replay-toolbar>div{display:flex;gap:4px}.replay-toolbar button{padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--muted);font-size:8px}.replay-toolbar button.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}.friend-timeline{display:grid}.friend-timeline>div{display:grid;grid-template-columns:8px 1fr;align-items:center;gap:7px;padding:6px 2px;border-top:1px solid var(--line)}.friend-timeline>div:first-child{border-top:0}.friend-timeline i{width:6px;height:6px;border-radius:50%;background:var(--accent)}.friend-timeline strong,.friend-timeline small{display:block}.friend-timeline strong{font-size:9px}.friend-timeline small{margin-top:2px;color:var(--muted);font-size:8px}
 .boop-section{display:grid;gap:10px}.boop-controls{display:grid;grid-template-columns:1fr auto;gap:8px}.boop-controls select{min-width:0;padding:9px 10px;color:var(--ink);background:var(--surface-muted);border:1px solid var(--line);border-radius:8px;font:inherit;font-size:10px}.boop-controls button{min-width:92px;padding:9px 13px;color:#fff;background:var(--accent);border:1px solid var(--accent);border-radius:8px;font-size:10px;font-weight:650;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}.boop-controls button:disabled{opacity:.6;cursor:default}.boop-message{margin:0;color:var(--success);font-size:9px}
 .mutual-grid { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }.mutual-grid button { min-width: 0; padding: 7px; color: var(--ink); background: var(--surface-muted); border: 1px solid transparent; border-radius: 8px; display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 8px; text-align: left; cursor: pointer; }.mutual-grid button:hover { border-color: var(--line-strong); }.mutual-grid img, .mutual-grid button > span { width: 34px; height: 34px; object-fit: cover; background: var(--accent-soft); border-radius: 8px; display: grid; place-items: center; }.mutual-grid div { min-width: 0; }.mutual-grid strong, .mutual-grid small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }.mutual-grid strong { font-size: 9px; }.mutual-grid small { color: var(--muted); margin-top: 3px; font-size: 8px; }

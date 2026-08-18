@@ -28,47 +28,99 @@ type SessionState struct {
 }
 
 type Friend struct {
-	ID                             string `json:"id"`
-	DisplayName                    string `json:"displayName"`
-	Status                         string `json:"status,omitempty"`
-	StatusDescription              string `json:"statusDescription,omitempty"`
-	Location                       string `json:"location,omitempty"`
-	Platform                       string `json:"platform,omitempty"`
-	LastPlatform                   string `json:"lastPlatform,omitempty"`
-	UserIcon                       string `json:"userIcon,omitempty"`
-	ImageURL                       string `json:"imageUrl,omitempty"`
-	CurrentAvatarThumbnailImageURL string `json:"currentAvatarThumbnailImageUrl,omitempty"`
-	Online                         bool   `json:"online"`
-}
-
-type UserProfile struct {
 	ID                             string   `json:"id"`
 	DisplayName                    string   `json:"displayName"`
-	Bio                            string   `json:"bio,omitempty"`
-	BioLinks                       []string `json:"bioLinks,omitempty"`
-	Pronouns                       string   `json:"pronouns,omitempty"`
 	Status                         string   `json:"status,omitempty"`
 	StatusDescription              string   `json:"statusDescription,omitempty"`
 	Location                       string   `json:"location,omitempty"`
 	Platform                       string   `json:"platform,omitempty"`
 	LastPlatform                   string   `json:"lastPlatform,omitempty"`
-	State                          string   `json:"state,omitempty"`
-	DeveloperType                  string   `json:"developerType,omitempty"`
-	DateJoined                     string   `json:"dateJoined,omitempty"`
-	LastActivity                   string   `json:"lastActivity,omitempty"`
-	LastLogin                      string   `json:"lastLogin,omitempty"`
 	UserIcon                       string   `json:"userIcon,omitempty"`
 	ImageURL                       string   `json:"imageUrl,omitempty"`
-	CurrentAvatarImageURL          string   `json:"currentAvatarImageUrl,omitempty"`
 	CurrentAvatarThumbnailImageURL string   `json:"currentAvatarThumbnailImageUrl,omitempty"`
+	CurrentAvatarImageURL          string   `json:"currentAvatarImageUrl,omitempty"`
 	ProfilePicOverride             string   `json:"profilePicOverride,omitempty"`
 	ProfilePicOverrideThumbnail    string   `json:"profilePicOverrideThumbnail,omitempty"`
-	BannerURL                      string   `json:"bannerUrl,omitempty"`
+	Bio                            string   `json:"bio,omitempty"`
+	BioLinks                       []string `json:"bioLinks,omitempty"`
+	CurrentAvatarTags              []string `json:"currentAvatarTags,omitempty"`
+	LastActivity                   string   `json:"lastActivity,omitempty"`
+	LastLogin                      string   `json:"lastLogin,omitempty"`
+	LastMobile                     string   `json:"lastMobile,omitempty"`
+	DeveloperType                  string   `json:"developerType,omitempty"`
 	IsFriend                       bool     `json:"isFriend"`
-	AllowAvatarCopying             bool     `json:"allowAvatarCopying"`
-	Tags                           []string `json:"tags,omitempty"`
-	TrustLevel                     string   `json:"trustLevel"`
-	Note                           string   `json:"note,omitempty"`
+	Online                         bool     `json:"online"`
+}
+
+type UserBadge struct {
+	ID          string `json:"id,omitempty"`
+	BadgeID     string `json:"badgeId,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	ImageURL    string `json:"imageUrl,omitempty"`
+	Hidden      bool   `json:"hidden,omitempty"`
+}
+
+type RepresentedGroup struct {
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	IconURL   string `json:"iconUrl,omitempty"`
+	BannerURL string `json:"bannerUrl,omitempty"`
+}
+
+type UserProfile struct {
+	ID                             string            `json:"id"`
+	DisplayName                    string            `json:"displayName"`
+	Bio                            string            `json:"bio,omitempty"`
+	BioLinks                       []string          `json:"bioLinks,omitempty"`
+	Pronouns                       string            `json:"pronouns,omitempty"`
+	Status                         string            `json:"status,omitempty"`
+	StatusDescription              string            `json:"statusDescription,omitempty"`
+	Location                       string            `json:"location,omitempty"`
+	Platform                       string            `json:"platform,omitempty"`
+	LastPlatform                   string            `json:"lastPlatform,omitempty"`
+	State                          string            `json:"state,omitempty"`
+	DeveloperType                  string            `json:"developerType,omitempty"`
+	DateJoined                     string            `json:"dateJoined,omitempty"`
+	LastActivity                   string            `json:"lastActivity,omitempty"`
+	LastLogin                      string            `json:"lastLogin,omitempty"`
+	UserIcon                       string            `json:"userIcon,omitempty"`
+	ImageURL                       string            `json:"imageUrl,omitempty"`
+	CurrentAvatarImageURL          string            `json:"currentAvatarImageUrl,omitempty"`
+	CurrentAvatarThumbnailImageURL string            `json:"currentAvatarThumbnailImageUrl,omitempty"`
+	ProfilePicOverride             string            `json:"profilePicOverride,omitempty"`
+	ProfilePicOverrideThumbnail    string            `json:"profilePicOverrideThumbnail,omitempty"`
+	BannerURL                      string            `json:"bannerUrl,omitempty"`
+	IsFriend                       bool              `json:"isFriend"`
+	AllowAvatarCopying             bool              `json:"allowAvatarCopying"`
+	Tags                           []string          `json:"tags,omitempty"`
+	TrustLevel                     string            `json:"trustLevel"`
+	Note                           string            `json:"note,omitempty"`
+	LastMobile                     string            `json:"lastMobile,omitempty"`
+	InstanceID                     string            `json:"instanceId,omitempty"`
+	WorldID                        string            `json:"worldId,omitempty"`
+	TravelingToInstance            string            `json:"travelingToInstance,omitempty"`
+	TravelingToLocation            string            `json:"travelingToLocation,omitempty"`
+	TravelingToWorld               string            `json:"travelingToWorld,omitempty"`
+	Languages                      []string          `json:"languages,omitempty"`
+	Badges                         []UserBadge       `json:"badges,omitempty"`
+	RepresentedGroup               *RepresentedGroup `json:"representedGroup,omitempty"`
+	HasVRCPlus                     bool              `json:"hasVrcPlus,omitempty"`
+	IsEconomyCreator               bool              `json:"isEconomyCreator,omitempty"`
+	AgeVerificationStatus          string            `json:"ageVerificationStatus,omitempty"`
+	AgeVerified                    bool              `json:"ageVerified,omitempty"`
+	IconURL                        string            `json:"iconUrl,omitempty"`
+	IconFrame                      string            `json:"iconFrame,omitempty"`
+	BannerColor                    string            `json:"bannerColor,omitempty"`
+	BannerType                     string            `json:"bannerType,omitempty"`
+	BackgroundType                 string            `json:"backgroundType,omitempty"`
+	NameplateEffect                string            `json:"nameplateEffect,omitempty"`
+	ProfileEffect                  string            `json:"profileEffect,omitempty"`
+	ThemeID                        string            `json:"themeId,omitempty"`
+	MutualFriendCount              int               `json:"mutualFriendCount,omitempty"`
+	MutualGroupCount               int               `json:"mutualGroupCount,omitempty"`
+	ProfileSources                 []string          `json:"profileSources,omitempty"`
+	ActivityVisibility             string            `json:"activityVisibility,omitempty"`
 }
 
 type SelfProfileUpdate struct {

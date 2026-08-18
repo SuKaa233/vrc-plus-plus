@@ -20,7 +20,7 @@ func TestListFriendsMergesOnlineAndOfflineAndFallsBackToCache(t *testing.T) {
 			return
 		}
 		if request.URL.Query().Get("offline") == "true" {
-			_ = json.NewEncoder(writer).Encode([]map[string]any{{"id": "usr_offline", "displayName": "Beta"}})
+			_ = json.NewEncoder(writer).Encode([]map[string]any{{"id": "usr_offline", "displayName": "Beta", "last_activity": "2026-08-17T10:00:00Z", "last_login": "2026-08-16T10:00:00Z", "last_mobile": "2026-08-15T10:00:00Z", "bio": "Hello"}})
 			return
 		}
 		_ = json.NewEncoder(writer).Encode([]map[string]any{{
@@ -44,6 +44,9 @@ func TestListFriendsMergesOnlineAndOfflineAndFallsBackToCache(t *testing.T) {
 	if result.Source != "live" || len(result.Items) != 2 || !result.Items[0].Online {
 		t.Fatalf("ListFriends() = %#v", result)
 	}
+	if result.Items[1].LastActivity == "" || result.Items[1].LastMobile == "" || result.Items[1].Bio != "Hello" {
+		t.Fatalf("offline friend fields were discarded: %#v", result.Items[1])
+	}
 	server.Close()
 	cached, err := client.ListFriends(context.Background())
 	if err != nil {
@@ -51,6 +54,40 @@ func TestListFriendsMergesOnlineAndOfflineAndFallsBackToCache(t *testing.T) {
 	}
 	if cached.Source != "cache" || len(cached.Items) != 2 {
 		t.Fatalf("cached ListFriends() = %#v", cached)
+	}
+}
+
+func TestGetUserMergesPublicPrivateAndMutualProfileFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/users/usr_alice":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"id": "usr_alice", "displayName": "Alice", "date_joined": "2020-01-02", "isFriend": true})
+		case "/profile/usr_alice":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"id": "usr_alice", "displayName": "Alice Public", "bio": "Public bio", "languages": []string{"eng", "jpn"}, "hasVrcPlus": true, "representedGroup": map[string]any{"id": "grp_test", "name": "Test Group"}, "trustTags": []string{"system_trust_known"}})
+		case "/profile/usr_alice/private":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"isFriend": true, "status": "active", "activity": map[string]any{"state": "active", "platform": "web", "last_activity": "2026-08-18T08:00:00Z"}})
+		case "/users/usr_alice/mutuals":
+			_ = json.NewEncoder(writer).Encode(map[string]int{"friends": 7, "groups": 2})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	store, _ := storage.Open(context.Background(), filepath.Join(t.TempDir(), "harbor.db"))
+	t.Cleanup(func() { _ = store.Close() })
+	client, _ := NewClient(server.URL, "Test/1 contact@example.com", store, testProtector{})
+	client.limiter = newRequestLimiter(1000, 1000)
+	result, err := client.GetUser(context.Background(), "usr_alice")
+	if err != nil || len(result.Items) != 1 {
+		t.Fatalf("GetUser() = %#v, %v", result, err)
+	}
+	item := result.Items[0]
+	if item.DisplayName != "Alice Public" || item.State != "active" || item.LastActivity == "" || item.MutualFriendCount != 7 || item.MutualGroupCount != 2 || item.RepresentedGroup == nil || !item.HasVRCPlus || item.TrustLevel != "user" || len(item.ProfileSources) != 4 {
+		t.Fatalf("merged profile = %#v", item)
+	}
+	byID, err := client.SearchUsers(context.Background(), "usr_alice", 12)
+	if err != nil || len(byID.Items) != 1 || byID.Items[0].DisplayName != "Alice Public" {
+		t.Fatalf("SearchUsers(by ID) = %#v, %v", byID, err)
 	}
 }
 

@@ -2,6 +2,10 @@ export interface AvatarSource {
   userIcon?: string
   imageUrl?: string
   currentAvatarThumbnailImageUrl?: string
+  currentAvatarImageUrl?: string
+  profilePicOverride?: string
+  profilePicOverrideThumbnail?: string
+  iconUrl?: string
 }
 
 /**
@@ -27,6 +31,10 @@ export function optimizedVrcImageUrl(value?: string, size = 256) {
 
 export function preferredFriendAvatar(friend?: AvatarSource | null) {
   return optimizedVrcImageUrl(friend?.userIcon)
+    || friend?.profilePicOverrideThumbnail
+    || optimizedVrcImageUrl(friend?.profilePicOverride)
+    || optimizedVrcImageUrl(friend?.iconUrl)
     || friend?.currentAvatarThumbnailImageUrl
+    || friend?.currentAvatarImageUrl
     || optimizedVrcImageUrl(friend?.imageUrl)
 }

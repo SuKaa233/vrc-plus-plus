@@ -56,12 +56,13 @@ const filtered = computed(() => {
     if (platformFilter.value !== 'all' && (friend.platform || friend.lastPlatform) !== platformFilter.value) return false
     if (tagFilter.value && !annotation?.tags?.includes(tagFilter.value)) return false
     if (!text) return true
-    return [friend.displayName, friend.id, annotation?.group, annotation?.note, ...(annotation?.tags ?? [])]
+    return [friend.displayName, friend.id, friend.bio, friend.statusDescription, friend.lastPlatform, annotation?.group, annotation?.note, ...(annotation?.tags ?? [])]
       .some((value) => value?.toLocaleLowerCase().includes(text))
   })
   return result.sort((left, right) => {
     if (sortBy.value === 'name') return left.displayName.localeCompare(right.displayName)
     if (sortBy.value === 'platform') return (left.platform || left.lastPlatform || '').localeCompare(right.platform || right.lastPlatform || '') || left.displayName.localeCompare(right.displayName)
+    if (sortBy.value === 'activity') return Date.parse(right.lastActivity || right.lastLogin || '1970-01-01') - Date.parse(left.lastActivity || left.lastLogin || '1970-01-01') || left.displayName.localeCompare(right.displayName)
     if (sortBy.value === 'tagged') return Number(Boolean(props.annotations[right.id])) - Number(Boolean(props.annotations[left.id])) || left.displayName.localeCompare(right.displayName)
     if (sortBy.value === 'default') return 0
     return Number(right.online) - Number(left.online) || Number(isJoinable(right)) - Number(isJoinable(left)) || left.displayName.localeCompare(right.displayName)
@@ -92,12 +93,22 @@ function markAvatarFailed(userID: string) {
 function locationLabel(friend: Friend) {
   if (!friend.online) return '离线'
   if (isJoinable(friend)) return '可加入实例'
-  if (!friend.location || friend.location === 'private' || friend.location.includes('~private(')) return '私人实例'
+  if (!friend.location) return '在线 · 位置受限'
+  if (friend.location === 'private' || friend.location.includes('~private(')) return '私人实例'
   return friend.location === 'traveling' ? '切换世界中' : '在线'
 }
 
 function platformLabel(value?: string) {
   return ({ standalonewindows: 'PC', android: 'Quest / Android', ios: 'iOS', web: 'Web' } as Record<string, string>)[value ?? ''] || value || '未知平台'
+}
+
+function activityLabel(friend: Friend) {
+  const value = friend.lastActivity || friend.lastLogin || friend.lastMobile
+  if (!value) return friend.statusDescription || '暂无公开活动时间'
+  const time = new Date(value)
+  if (Number.isNaN(time.getTime())) return value
+  const days = Math.max(0, Math.floor((Date.now() - time.getTime()) / 86400000))
+  return days === 0 ? `最近活动 ${time.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' })}` : `最近活动 ${days} 天前`
 }
 
 function itemPosition(item: { row: number; column: number }) {
@@ -184,7 +195,7 @@ onBeforeUnmount(() => {
       <label><SlidersHorizontal :size="14" /><select v-model="statusFilter"><option value="all">全部状态</option><option value="online">仅在线</option><option value="joinable">可加入</option><option value="private">私人实例</option><option value="offline">离线</option></select></label>
       <label><Users :size="14" /><select v-model="platformFilter"><option value="all">全部平台</option><option v-for="platform in platforms" :key="platform" :value="platform">{{ platformLabel(platform) }}</option></select></label>
       <label><Tags :size="14" /><select v-model="tagFilter"><option value="">全部标签</option><option v-for="tag in tags" :key="tag" :value="tag"># {{ tag }}</option></select></label>
-      <label>排序<select v-model="sortBy"><option value="status">在线与可加入优先</option><option value="name">名称</option><option value="platform">平台</option><option value="tagged">已整理优先</option><option value="default">VRChat 默认顺序</option></select></label>
+      <label>排序<select v-model="sortBy"><option value="status">在线与可加入优先</option><option value="activity">最近活动</option><option value="name">名称</option><option value="platform">平台</option><option value="tagged">已整理优先</option><option value="default">VRChat 默认顺序</option></select></label>
       <label><Bookmark :size="14" /><select v-model="selectedPreset" @change="applyPreset"><option value="">筛选方案</option><option v-for="preset in presets" :key="preset.name" :value="preset.name">{{ preset.name }}</option></select></label>
       <button class="filter-action" title="保存当前筛选方案" @click="savePreset"><Bookmark :size="14" />保存</button>
       <button v-if="selectedPreset" class="filter-action danger" title="删除当前方案" @click="deletePreset"><Trash2 :size="14" /></button>
@@ -195,7 +206,7 @@ onBeforeUnmount(() => {
           <img v-if="avatar(item.friend)" :src="avatar(item.friend)" alt="" loading="lazy" decoding="async" @error="markAvatarFailed(item.friend.id)" />
           <span v-else class="virtual-avatar-fallback">{{ item.friend.displayName.slice(0, 1) }}</span>
           <span class="virtual-presence" :class="{ online: item.friend.online }"></span>
-          <span class="virtual-copy"><strong>{{ item.friend.displayName }}</strong><small>{{ locationLabel(item.friend) }} · {{ platformLabel(item.friend.platform || item.friend.lastPlatform) }}</small><em>{{ annotations[item.friend.id]?.group || annotations[item.friend.id]?.note || item.friend.statusDescription || '暂无本机备注' }}</em></span>
+          <span class="virtual-copy"><strong>{{ item.friend.displayName }}</strong><small>{{ locationLabel(item.friend) }} · {{ platformLabel(item.friend.platform || item.friend.lastPlatform) }}</small><em>{{ annotations[item.friend.id]?.group || annotations[item.friend.id]?.note || activityLabel(item.friend) }}</em></span>
           <span class="virtual-tags"><i v-for="tag in annotations[item.friend.id]?.tags?.slice(0, 4)" :key="tag">#{{ tag }}</i></span>
         </button>
       </div>

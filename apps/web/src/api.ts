@@ -55,8 +55,22 @@ export interface Friend {
   userIcon?: string
   imageUrl?: string
   currentAvatarThumbnailImageUrl?: string
+  currentAvatarImageUrl?: string
+  profilePicOverride?: string
+  profilePicOverrideThumbnail?: string
+  bio?: string
+  bioLinks?: string[]
+  currentAvatarTags?: string[]
+  lastActivity?: string
+  lastLogin?: string
+  lastMobile?: string
+  developerType?: string
+  isFriend?: boolean
   online: boolean
 }
+
+export interface UserBadge { id?:string; badgeId?:string; name?:string; description?:string; imageUrl?:string; hidden?:boolean }
+export interface RepresentedGroup { id?:string; name?:string; iconUrl?:string; bannerUrl?:string }
 
 export interface PresenceWatchRule { userId:string; displayName:string; notifyOnline:boolean; notifyOffline:boolean; desktopEnabled:boolean; emailEnabled:boolean; updatedAt:string; currentState?:'online'|'offline' }
 export interface EmailSettings { enabled:boolean; host:string; port:number; security:'starttls'|'tls'; username:string; from:string; to:string; configured:boolean; password?:string }
@@ -90,6 +104,31 @@ export interface UserProfile {
   tags?: string[]
   trustLevel: 'visitor' | 'new' | 'user' | 'known' | 'trusted'
   note?: string
+  lastMobile?: string
+  instanceId?: string
+  worldId?: string
+  travelingToInstance?: string
+  travelingToLocation?: string
+  travelingToWorld?: string
+  languages?: string[]
+  badges?: UserBadge[]
+  representedGroup?: RepresentedGroup
+  hasVrcPlus?: boolean
+  isEconomyCreator?: boolean
+  ageVerificationStatus?: string
+  ageVerified?: boolean
+  iconUrl?: string
+  iconFrame?: string
+  bannerColor?: string
+  bannerType?: string
+  backgroundType?: string
+  nameplateEffect?: string
+  profileEffect?: string
+  themeId?: string
+  mutualFriendCount?: number
+  mutualGroupCount?: number
+  profileSources?: string[]
+  activityVisibility?: 'visible' | 'restricted'
 }
 
 export interface SelfProfileUpdate {

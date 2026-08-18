@@ -31,16 +31,27 @@ const (
 )
 
 type friendPayload struct {
-	ID                             string `json:"id"`
-	DisplayName                    string `json:"displayName"`
-	Status                         string `json:"status"`
-	StatusDescription              string `json:"statusDescription"`
-	Location                       string `json:"location"`
-	Platform                       string `json:"platform"`
-	LastPlatform                   string `json:"last_platform"`
-	UserIcon                       string `json:"userIcon"`
-	ImageURL                       string `json:"imageUrl"`
-	CurrentAvatarThumbnailImageURL string `json:"currentAvatarThumbnailImageUrl"`
+	ID                             string   `json:"id"`
+	DisplayName                    string   `json:"displayName"`
+	Status                         string   `json:"status"`
+	StatusDescription              string   `json:"statusDescription"`
+	Location                       string   `json:"location"`
+	Platform                       string   `json:"platform"`
+	LastPlatform                   string   `json:"last_platform"`
+	UserIcon                       string   `json:"userIcon"`
+	ImageURL                       string   `json:"imageUrl"`
+	CurrentAvatarThumbnailImageURL string   `json:"currentAvatarThumbnailImageUrl"`
+	CurrentAvatarImageURL          string   `json:"currentAvatarImageUrl"`
+	ProfilePicOverride             string   `json:"profilePicOverride"`
+	ProfilePicOverrideThumbnail    string   `json:"profilePicOverrideThumbnail"`
+	Bio                            string   `json:"bio"`
+	BioLinks                       []string `json:"bioLinks"`
+	CurrentAvatarTags              []string `json:"currentAvatarTags"`
+	LastActivity                   string   `json:"last_activity"`
+	LastLogin                      string   `json:"last_login"`
+	LastMobile                     string   `json:"last_mobile"`
+	DeveloperType                  string   `json:"developerType"`
+	IsFriend                       bool     `json:"isFriend"`
 }
 
 type worldPayload struct {
@@ -174,32 +185,78 @@ func (item avatarPayload) toModel() model.Avatar {
 }
 
 type userPayload struct {
-	ID                             string   `json:"id"`
-	DisplayName                    string   `json:"displayName"`
-	Bio                            string   `json:"bio"`
-	BioLinks                       []string `json:"bioLinks"`
-	Pronouns                       string   `json:"pronouns"`
-	Status                         string   `json:"status"`
-	StatusDescription              string   `json:"statusDescription"`
-	Location                       string   `json:"location"`
-	Platform                       string   `json:"platform"`
-	LastPlatform                   string   `json:"last_platform"`
-	State                          string   `json:"state"`
-	DeveloperType                  string   `json:"developerType"`
-	DateJoined                     string   `json:"date_joined"`
-	LastActivity                   string   `json:"last_activity"`
-	LastLogin                      string   `json:"last_login"`
-	UserIcon                       string   `json:"userIcon"`
-	ImageURL                       string   `json:"imageUrl"`
-	CurrentAvatarImageURL          string   `json:"currentAvatarImageUrl"`
-	CurrentAvatarThumbnailImageURL string   `json:"currentAvatarThumbnailImageUrl"`
-	ProfilePicOverride             string   `json:"profilePicOverride"`
-	ProfilePicOverrideThumbnail    string   `json:"profilePicOverrideThumbnail"`
-	BannerURL                      string   `json:"bannerUrl"`
-	IsFriend                       bool     `json:"isFriend"`
-	AllowAvatarCopying             bool     `json:"allowAvatarCopying"`
-	Tags                           []string `json:"tags"`
-	Note                           string   `json:"note"`
+	ID                             string                  `json:"id"`
+	DisplayName                    string                  `json:"displayName"`
+	Bio                            string                  `json:"bio"`
+	BioLinks                       []string                `json:"bioLinks"`
+	Pronouns                       string                  `json:"pronouns"`
+	Status                         string                  `json:"status"`
+	StatusDescription              string                  `json:"statusDescription"`
+	Location                       string                  `json:"location"`
+	Platform                       string                  `json:"platform"`
+	LastPlatform                   string                  `json:"last_platform"`
+	State                          string                  `json:"state"`
+	DeveloperType                  string                  `json:"developerType"`
+	DateJoined                     string                  `json:"date_joined"`
+	LastActivity                   string                  `json:"last_activity"`
+	LastLogin                      string                  `json:"last_login"`
+	UserIcon                       string                  `json:"userIcon"`
+	ImageURL                       string                  `json:"imageUrl"`
+	CurrentAvatarImageURL          string                  `json:"currentAvatarImageUrl"`
+	CurrentAvatarThumbnailImageURL string                  `json:"currentAvatarThumbnailImageUrl"`
+	ProfilePicOverride             string                  `json:"profilePicOverride"`
+	ProfilePicOverrideThumbnail    string                  `json:"profilePicOverrideThumbnail"`
+	BannerURL                      string                  `json:"bannerUrl"`
+	IsFriend                       bool                    `json:"isFriend"`
+	AllowAvatarCopying             bool                    `json:"allowAvatarCopying"`
+	Tags                           []string                `json:"tags"`
+	TrustTags                      []string                `json:"trustTags"`
+	Note                           string                  `json:"note"`
+	LastMobile                     string                  `json:"last_mobile"`
+	InstanceID                     string                  `json:"instanceId"`
+	WorldID                        string                  `json:"worldId"`
+	TravelingToInstance            string                  `json:"travelingToInstance"`
+	TravelingToLocation            string                  `json:"travelingToLocation"`
+	TravelingToWorld               string                  `json:"travelingToWorld"`
+	Languages                      []string                `json:"languages"`
+	Badges                         []model.UserBadge       `json:"badges"`
+	RepresentedGroup               *model.RepresentedGroup `json:"representedGroup"`
+	HasVRCPlus                     bool                    `json:"hasVrcPlus"`
+	IsEconomyCreator               bool                    `json:"isEconomyCreator"`
+	AgeVerificationStatus          string                  `json:"ageVerificationStatus"`
+	AgeVerified                    bool                    `json:"ageVerified"`
+	IconURL                        string                  `json:"iconUrl"`
+	IconFrame                      string                  `json:"iconFrame"`
+	BannerColor                    string                  `json:"bannerColor"`
+	BannerType                     string                  `json:"bannerType"`
+	BackgroundType                 string                  `json:"backgroundType"`
+	NameplateEffect                string                  `json:"nameplateEffect"`
+	ProfileEffect                  string                  `json:"profileEffect"`
+	ThemeID                        string                  `json:"themeId"`
+}
+
+type privateProfilePayload struct {
+	IsFriend          bool   `json:"isFriend"`
+	Note              string `json:"note"`
+	Status            string `json:"status"`
+	StatusDescription string `json:"statusDescription"`
+	Activity          struct {
+		InstanceID          string `json:"instanceId"`
+		WorldID             string `json:"worldId"`
+		Location            string `json:"location"`
+		Platform            string `json:"platform"`
+		State               string `json:"state"`
+		LastActivity        string `json:"last_activity"`
+		LastLogin           string `json:"last_login"`
+		TravelingToInstance string `json:"travelingToInstance"`
+		TravelingToLocation string `json:"travelingToLocation"`
+		TravelingToWorld    string `json:"travelingToWorld"`
+	} `json:"activity"`
+}
+
+type mutualCountsPayload struct {
+	Friends int `json:"friends"`
+	Groups  int `json:"groups"`
 }
 
 type mutualFriendPayload struct {
@@ -265,6 +322,9 @@ func (c *Client) GetUser(ctx context.Context, userID string) (model.DataEnvelope
 		return model.DataEnvelope[model.UserProfile]{}, err
 	}
 	cacheKey := "user:" + userID
+	if cached, cacheErr := loadFreshCache[model.UserProfile](ctx, c.store, cacheKey); cacheErr == nil {
+		return cached, nil
+	}
 	data, err := c.getJSON(ctx, "users/"+url.PathEscape(userID))
 	if err != nil {
 		return loadCache[model.UserProfile](ctx, c.store, cacheKey, err)
@@ -273,7 +333,33 @@ func (c *Client) GetUser(ctx context.Context, userID string) (model.DataEnvelope
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return loadCache[model.UserProfile](ctx, c.store, cacheKey, fmt.Errorf("parse VRChat user: %w", err))
 	}
-	return saveEnvelope(ctx, c.store, cacheKey, []model.UserProfile{payload.toModel()}, userCacheTTL)
+	profile := payload.toModel()
+	profile.ProfileSources = []string{"user"}
+	if publicData, publicErr := c.getJSON(ctx, "profile/"+url.PathEscape(userID)); publicErr == nil {
+		var public userPayload
+		if json.Unmarshal(publicData, &public) == nil {
+			mergePublicProfile(&profile, public)
+			profile.ProfileSources = append(profile.ProfileSources, "public-profile")
+		}
+	}
+	if privateData, privateErr := c.getJSON(ctx, "profile/"+url.PathEscape(userID)+"/private"); privateErr == nil {
+		var private privateProfilePayload
+		if json.Unmarshal(privateData, &private) == nil {
+			mergePrivateProfile(&profile, private)
+			profile.ProfileSources = append(profile.ProfileSources, "private-profile")
+			profile.ActivityVisibility = "visible"
+		}
+	} else {
+		profile.ActivityVisibility = "restricted"
+	}
+	if mutualData, mutualErr := c.getJSON(ctx, "users/"+url.PathEscape(userID)+"/mutuals"); mutualErr == nil {
+		var mutual mutualCountsPayload
+		if json.Unmarshal(mutualData, &mutual) == nil {
+			profile.MutualFriendCount, profile.MutualGroupCount = mutual.Friends, mutual.Groups
+			profile.ProfileSources = append(profile.ProfileSources, "mutuals")
+		}
+	}
+	return saveEnvelope(ctx, c.store, cacheKey, []model.UserProfile{profile}, userCacheTTL)
 }
 
 func (c *Client) UpdateSelfProfile(ctx context.Context, input model.SelfProfileUpdate) (model.UserProfile, error) {
@@ -342,6 +428,12 @@ func (c *Client) UpdateSelfProfile(ctx context.Context, input model.SelfProfileU
 
 func (c *Client) SearchUsers(ctx context.Context, search string, limit int) (model.DataEnvelope[model.UserProfile], error) {
 	search = strings.TrimSpace(search)
+	if strings.HasPrefix(search, "usr_") {
+		if err := validateUserID(search); err != nil {
+			return model.DataEnvelope[model.UserProfile]{}, err
+		}
+		return c.GetUser(ctx, search)
+	}
 	if len([]rune(search)) < 2 || len([]rune(search)) > 64 {
 		return model.DataEnvelope[model.UserProfile]{}, fmt.Errorf("%w: user search must contain 2-64 characters", ErrInvalidRequest)
 	}
@@ -1119,7 +1211,11 @@ func (payload friendPayload) toModel(online bool) model.Friend {
 		Platform: payload.Platform, LastPlatform: payload.LastPlatform,
 		UserIcon: payload.UserIcon, ImageURL: payload.ImageURL,
 		CurrentAvatarThumbnailImageURL: payload.CurrentAvatarThumbnailImageURL,
-		Online:                         online,
+		CurrentAvatarImageURL:          payload.CurrentAvatarImageURL, ProfilePicOverride: payload.ProfilePicOverride,
+		ProfilePicOverrideThumbnail: payload.ProfilePicOverrideThumbnail, Bio: payload.Bio, BioLinks: payload.BioLinks,
+		CurrentAvatarTags: payload.CurrentAvatarTags, LastActivity: payload.LastActivity, LastLogin: payload.LastLogin,
+		LastMobile: payload.LastMobile, DeveloperType: payload.DeveloperType, IsFriend: payload.IsFriend,
+		Online: online,
 	}
 }
 
@@ -1190,7 +1286,49 @@ func (payload userPayload) toModel() model.UserProfile {
 		ProfilePicOverride:             payload.ProfilePicOverride, ProfilePicOverrideThumbnail: payload.ProfilePicOverrideThumbnail,
 		BannerURL: payload.BannerURL, IsFriend: payload.IsFriend, AllowAvatarCopying: payload.AllowAvatarCopying,
 		Tags: payload.Tags, TrustLevel: trustLevel(payload.Tags), Note: payload.Note,
+		LastMobile: payload.LastMobile, InstanceID: payload.InstanceID, WorldID: payload.WorldID,
+		TravelingToInstance: payload.TravelingToInstance, TravelingToLocation: payload.TravelingToLocation, TravelingToWorld: payload.TravelingToWorld,
+		Languages: payload.Languages, Badges: payload.Badges, RepresentedGroup: payload.RepresentedGroup,
+		HasVRCPlus: payload.HasVRCPlus, IsEconomyCreator: payload.IsEconomyCreator,
+		AgeVerificationStatus: payload.AgeVerificationStatus, AgeVerified: payload.AgeVerified,
+		IconURL: payload.IconURL, IconFrame: payload.IconFrame, BannerColor: payload.BannerColor, BannerType: payload.BannerType,
+		BackgroundType: payload.BackgroundType, NameplateEffect: payload.NameplateEffect, ProfileEffect: payload.ProfileEffect, ThemeID: payload.ThemeID,
 	}
+}
+
+func mergePublicProfile(target *model.UserProfile, payload userPayload) {
+	if payload.DisplayName != "" {
+		target.DisplayName = payload.DisplayName
+	}
+	target.Bio, target.BioLinks, target.Pronouns = payload.Bio, payload.BioLinks, payload.Pronouns
+	target.Languages, target.Badges, target.RepresentedGroup = payload.Languages, payload.Badges, payload.RepresentedGroup
+	target.HasVRCPlus, target.IsEconomyCreator = payload.HasVRCPlus, payload.IsEconomyCreator
+	target.AgeVerificationStatus, target.AgeVerified = payload.AgeVerificationStatus, payload.AgeVerified
+	target.IconURL, target.IconFrame = payload.IconURL, payload.IconFrame
+	target.BannerURL, target.BannerColor, target.BannerType, target.BackgroundType = payload.BannerURL, payload.BannerColor, payload.BannerType, payload.BackgroundType
+	target.NameplateEffect, target.ProfileEffect, target.ThemeID = payload.NameplateEffect, payload.ProfileEffect, payload.ThemeID
+	profileTags := payload.Tags
+	if len(payload.TrustTags) > 0 {
+		profileTags = payload.TrustTags
+	}
+	if len(profileTags) > 0 {
+		target.Tags, target.TrustLevel = profileTags, trustLevel(profileTags)
+	}
+}
+
+func mergePrivateProfile(target *model.UserProfile, payload privateProfilePayload) {
+	target.IsFriend, target.Note = payload.IsFriend, payload.Note
+	if payload.Status != "" {
+		target.Status = payload.Status
+	}
+	if payload.StatusDescription != "" {
+		target.StatusDescription = payload.StatusDescription
+	}
+	activity := payload.Activity
+	target.InstanceID, target.WorldID, target.Location = activity.InstanceID, activity.WorldID, activity.Location
+	target.Platform, target.State = activity.Platform, activity.State
+	target.LastActivity, target.LastLogin = activity.LastActivity, activity.LastLogin
+	target.TravelingToInstance, target.TravelingToLocation, target.TravelingToWorld = activity.TravelingToInstance, activity.TravelingToLocation, activity.TravelingToWorld
 }
 
 func (payload mutualFriendPayload) toModel() model.MutualFriend {
