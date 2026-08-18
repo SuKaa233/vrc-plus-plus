@@ -207,6 +207,10 @@ const discoverySelectedGroupID = ref("");
 const discoveryExpanding = ref(false);
 const discoveryClueError = ref("");
 const discoveryScanMessage = ref("");
+const discoveryBootstrapping = ref(false);
+const discoveryAutoMessage = ref("");
+let discoveryBootstrappedUserID = "";
+let discoveryBootstrappedAt = 0;
 type RecentAccessItem = {
   kind: "friend" | "world" | "avatar";
   id: string;
@@ -451,9 +455,92 @@ function selectView(view: View) {
   if (view === "network" || view === "journey" || view === "focus")
     void loadFriendNetwork();
   if (view === "journey") void refreshSystemCenter();
-  if (view === "activity" || view === "discovery" || view === "focus")
-    void loadActivity();
+  if (view === "activity" || view === "focus") void loadActivity();
+  if (view === "discovery")
+    void loadActivity().then(() => bootstrapDiscovery());
   if (view === "notifications") void loadNotifications();
+}
+
+async function bootstrapDiscovery() {
+  const selfID = session.value.user?.id;
+  if (
+    !selfID ||
+    discoveryBootstrapping.value ||
+    discoveryExpandedUser.value ||
+    (discoveryBootstrappedUserID === selfID &&
+      Date.now() - discoveryBootstrappedAt < 5 * 60 * 1000)
+  )
+    return;
+  discoveryBootstrapping.value = true;
+  discoveryAutoMessage.value = "正在从最近同房记录中寻找圈外人物…";
+  try {
+    const friendIDs = new Set((friends.value?.items ?? []).map((item) => item.id));
+    const candidateIDs: string[] = [];
+    for (const event of activityEvents.value) {
+      if (
+        event.userId &&
+        event.userId !== selfID &&
+        !friendIDs.has(event.userId) &&
+        !candidateIDs.includes(event.userId)
+      )
+        candidateIDs.push(event.userId);
+    }
+    for (const notification of notifications.value) {
+      if (
+        notification.senderUserId &&
+        notification.senderUserId !== selfID &&
+        !friendIDs.has(notification.senderUserId) &&
+        !candidateIDs.includes(notification.senderUserId)
+      )
+        candidateIDs.push(notification.senderUserId);
+    }
+    for (const userID of candidateIDs.slice(0, 2)) {
+      try {
+        const result = await api.user(userID);
+        const profile = result.items[0];
+        if (!profile) continue;
+        discoveryResults.value = [
+          profile,
+          ...discoveryResults.value.filter((item) => item.id !== profile.id),
+        ];
+        discoveryAutoMessage.value = `已从本机记录自动发现 ${profile.displayName}，正在生成关系图…`;
+        await expandDiscoveryUser(profile);
+        return;
+      } catch {
+        // Continue to the next locally observed candidate.
+      }
+    }
+
+    discoveryAutoMessage.value = "最近记录没有可用陌生人，正在从你的可见群组寻找候选…";
+    try {
+      const groups = await api.groups(selfID);
+      const initialGroup = groups.items[0];
+      if (initialGroup) {
+        const members = await api.groupMembers(initialGroup.id, 100);
+        const candidate = members.items.find(
+          (item) => item.userId !== selfID && !friendIDs.has(item.userId),
+        );
+        if (candidate) {
+          const result = await api.user(candidate.userId);
+          const profile = result.items[0];
+          if (profile) {
+            discoveryResults.value = [profile];
+            discoveryAutoMessage.value = `已从 ${initialGroup.name} 自动发现 ${profile.displayName}，正在生成关系图…`;
+            await expandDiscoveryUser(profile);
+            return;
+          }
+        }
+      }
+    } catch {
+      // Public group membership can legitimately be unavailable.
+    }
+    discoveryAutoMessage.value =
+      "暂未发现真实圈外人物，当前展示功能预览；产生同房记录后会自动替换为真实关系。";
+  } finally {
+    discoveryBootstrappedUserID = selfID;
+    discoveryBootstrappedAt = Date.now();
+    discoveryBootstrapping.value = false;
+  }
 }
 
 function recentKey() {
@@ -2146,6 +2233,8 @@ onBeforeUnmount(() => {
             :expanding="discoveryExpanding"
             :clue-error="discoveryClueError"
             :scan-message="discoveryScanMessage"
+            :bootstrapping="discoveryBootstrapping"
+            :auto-message="discoveryAutoMessage"
             :acting-id="friendRequestActingID"
             :storage-key="session.user?.id ?? 'default'"
             :media-url="api.mediaUrl.bind(api)"

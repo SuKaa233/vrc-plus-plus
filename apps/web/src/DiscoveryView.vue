@@ -11,6 +11,7 @@ const props = defineProps<{
   mutuals: MutualFriend[]; self:{ id:string; displayName:string; imageUrl?:string }
   loading: boolean; expanding: boolean; actingId: string; clueError?: string; storageKey: string
   scanMessage?: string
+  bootstrapping:boolean; autoMessage?:string
   mediaUrl: (value?: string) => string
 }>()
 const emit = defineEmits<{
@@ -27,6 +28,10 @@ const saved = ref<SavedPerson[]>([])
 const friendIDs = computed(() => new Set(props.friends.map(item => item.id)))
 const selectedGroup = computed(() => props.groups.find(item => item.id === props.selectedGroupId))
 const storageName = computed(() => `vrcpp-strangers:${props.storageKey}`)
+const demoTarget:UserProfile = { id:'usr_demo_target', displayName:'示例陌生人', bio:'这里会展示真实用户公开的简介、状态与关系证据。', pronouns:'示例', status:'active', statusDescription:'正在探索公开世界', platform:'standalonewindows', dateJoined:'2023-05-20', isFriend:false, allowAvatarCopying:false, trustLevel:'known', languages:['中文','English'], mutualFriendCount:2, mutualGroupCount:2, profileSources:['user','publicProfile','mutuals'], activityVisibility:'visible' }
+const demoMutuals:MutualFriend[] = [{ id:'usr_demo_bridge_a', displayName:'共同好友 A' },{ id:'usr_demo_bridge_b', displayName:'共同好友 B' }]
+const demoGroups:Group[] = [{ id:'grp_demo_world', name:'公开群组 · World Hop', memberCount:320, isRepresenting:true },{ id:'grp_demo_social', name:'公开群组 · Social', memberCount:180, isRepresenting:false }]
+const demoMembers:GroupMember[] = [{ userId:'usr_demo_candidate_a', groupId:'grp_demo_world', displayName:'跨圈候选 A', isRepresenting:false },{ userId:'usr_demo_candidate_a', groupId:'grp_demo_social', displayName:'跨圈候选 A', isRepresenting:false },{ userId:'usr_demo_candidate_b', groupId:'grp_demo_world', displayName:'群组候选 B', isRepresenting:false }]
 const recentUsers = computed(() => {
   const byID = new Map<string, { user: UserProfile; count: number; latest: string }>()
   for (const event of props.events) {
@@ -114,6 +119,12 @@ watch(storageName, loadSaved)
       <div><Users :size="16" /><span><strong>{{ publicCandidates.length }}</strong>群组候选</span></div><div><Bookmark :size="16" /><span><strong>{{ saved.length }}</strong>本地收藏</span></div>
     </div>
 
+    <article v-if="!expandedUser" class="auto-discovery-card">
+      <div class="auto-state"><LoaderCircle v-if="bootstrapping" class="spin" :size="18" /><Sparkles v-else :size="18" /><span><strong>{{ bootstrapping ? '正在自动发现真实关系' : '无需导入，进入即用' }}</strong><small>{{ autoMessage || '优先读取最近同房记录，其次尝试当前账号可见群组。' }}</small></span></div>
+      <div class="auto-highlights"><span><b>①</b>自动发现圈外人物</span><span><b>②</b>生成可锁定关系图</span><span><b>③</b>给出带证据的多维推测</span></div>
+    </article>
+    <div v-if="!expandedUser" class="demo-graph"><span class="demo-ribbon">功能预览 · 示例数据</span><StrangerNetworkGraph :self="self" :target="demoTarget" :mutuals="demoMutuals" :groups="demoGroups" :members="demoMembers" :events="[]" :media-url="mediaUrl" /></div>
+
     <article v-if="results.length" class="stranger-section">
       <header><div><Search :size="17" /><strong>搜索结果</strong></div><span>先展开关系线索，再决定是否收藏或加好友</span></header>
       <div class="person-grid"><div v-for="user in results" :key="user.id" class="person-card">
@@ -172,4 +183,6 @@ watch(storageName, loadSaved)
 .inline-loading{display:flex;align-items:center;gap:6px;margin:0 0 8px;padding:7px 9px;border-radius:6px;background:var(--surface-muted);color:var(--muted);font-size:8px}
 .scan-summary{display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:7px 9px;border-radius:6px;background:color-mix(in srgb,var(--accent) 8%,var(--surface));color:var(--ink-soft);font-size:8px}.scan-summary svg{color:var(--accent)}.radar-toolbar{display:grid;grid-template-columns:minmax(190px,1fr) minmax(150px,.7fr) auto;align-items:center;gap:8px;margin-top:10px;padding:9px;border:1px solid var(--line);border-radius:7px;background:var(--surface-muted)}.radar-toolbar>div strong,.radar-toolbar>div small{display:block}.radar-toolbar>div strong{font-size:10px}.radar-toolbar>div small{margin-top:2px;color:var(--muted);font-size:8px}.radar-toolbar label{height:30px;display:flex;align-items:center;gap:6px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--muted)}.radar-toolbar input{min-width:0;width:100%;border:0;outline:0;background:transparent;color:var(--ink);font-size:9px}.radar-toolbar button{height:30px;display:flex;align-items:center;gap:5px;padding:0 9px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-soft);font-size:9px;cursor:pointer}.radar-toolbar button:disabled{opacity:.5}.candidate-grid em{display:block;margin-top:2px;overflow:hidden;color:var(--muted);font-size:8px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.source-score{display:grid;place-items:center;width:22px;height:22px;border-radius:999px;background:color-mix(in srgb,var(--accent) 14%,var(--surface));color:var(--accent);font-size:9px}
 @media(max-width:760px){.radar-toolbar{grid-template-columns:1fr}.radar-toolbar button{justify-content:center}}
+.auto-discovery-card{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:9px;background:color-mix(in srgb,var(--accent) 6%,var(--surface))}.auto-state{display:flex;align-items:center;gap:9px}.auto-state>svg{color:var(--accent)}.auto-state span,.auto-state strong,.auto-state small{display:block}.auto-state strong{font-size:11px}.auto-state small{margin-top:3px;color:var(--muted);font-size:8px}.auto-highlights{display:flex;gap:6px}.auto-highlights span{display:flex;align-items:center;gap:5px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-soft);font-size:8px}.auto-highlights b{color:var(--accent)}.demo-graph{position:relative}.demo-graph :deep(.relationship-lab){margin-top:0}.demo-ribbon{position:absolute;z-index:4;top:51px;right:10px;padding:5px 8px;border-radius:5px;background:#a7783f;color:#fff;font-size:8px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.14)}
+@media(max-width:850px){.auto-discovery-card{align-items:flex-start;flex-direction:column}.auto-highlights{flex-wrap:wrap}}
 </style>
