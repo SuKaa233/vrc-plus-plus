@@ -416,6 +416,40 @@ type DomainEvent struct {
 	Content    json.RawMessage `json:"content,omitempty"`
 }
 
+type PresenceWatchRule struct {
+	UserID         string    `json:"userId"`
+	DisplayName    string    `json:"displayName"`
+	NotifyOnline   bool      `json:"notifyOnline"`
+	NotifyOffline  bool      `json:"notifyOffline"`
+	DesktopEnabled bool      `json:"desktopEnabled"`
+	EmailEnabled   bool      `json:"emailEnabled"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
+type EmailSettings struct {
+	Enabled    bool   `json:"enabled"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	Security   string `json:"security"`
+	Username   string `json:"username"`
+	From       string `json:"from"`
+	To         string `json:"to"`
+	Configured bool   `json:"configured"`
+}
+
+type NotificationDelivery struct {
+	ID          int64      `json:"id"`
+	UserID      string     `json:"userId,omitempty"`
+	DisplayName string     `json:"displayName,omitempty"`
+	EventType   string     `json:"eventType"`
+	Channel     string     `json:"channel"`
+	Status      string     `json:"status"`
+	Message     string     `json:"message"`
+	ObservedAt  time.Time  `json:"observedAt"`
+	SentAt      *time.Time `json:"sentAt,omitempty"`
+	Error       string     `json:"error,omitempty"`
+}
+
 type NetworkConfig struct {
 	Mode     string `json:"mode"`
 	ProxyURL string `json:"proxyUrl,omitempty"`

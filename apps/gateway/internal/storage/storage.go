@@ -126,6 +126,26 @@ func (s *Store) migrate(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_activity_event_observed_at ON activity_event(observed_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_activity_event_user ON activity_event(user_id, observed_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS presence_watch_rule (
+			account_id TEXT NOT NULL, user_id TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '',
+			notify_online INTEGER NOT NULL DEFAULT 1, notify_offline INTEGER NOT NULL DEFAULT 1,
+			desktop_enabled INTEGER NOT NULL DEFAULT 1, email_enabled INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL, PRIMARY KEY(account_id, user_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS presence_state (
+			account_id TEXT NOT NULL, user_id TEXT NOT NULL, state TEXT NOT NULL, observed_at TEXT NOT NULL,
+			PRIMARY KEY(account_id, user_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS secure_secret (
+			setting_key TEXT PRIMARY KEY, encrypted_value BLOB NOT NULL, updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS notification_delivery (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL, user_id TEXT NOT NULL DEFAULT '',
+			display_name TEXT NOT NULL DEFAULT '', event_type TEXT NOT NULL, channel TEXT NOT NULL,
+			status TEXT NOT NULL, message TEXT NOT NULL, observed_at TEXT NOT NULL,
+			sent_at TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_notification_delivery_account ON notification_delivery(account_id, observed_at DESC)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
@@ -171,6 +191,125 @@ func (s *Store) migrate(ctx context.Context) error {
 		time.Now().UTC().Format(time.RFC3339Nano),
 	)
 	return err
+}
+
+func (s *Store) ActiveAccountID(ctx context.Context) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT account_id FROM account_profile WHERE active=1 LIMIT 1`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return id, err
+}
+
+func (s *Store) ListPresenceWatchRules(ctx context.Context, accountID string) ([]model.PresenceWatchRule, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT user_id, display_name, notify_online, notify_offline, desktop_enabled, email_enabled, updated_at FROM presence_watch_rule WHERE account_id=? ORDER BY display_name COLLATE NOCASE`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []model.PresenceWatchRule{}
+	for rows.Next() {
+		var item model.PresenceWatchRule
+		var online, offline, desktop, email int
+		var updated string
+		if err := rows.Scan(&item.UserID, &item.DisplayName, &online, &offline, &desktop, &email, &updated); err != nil {
+			return nil, err
+		}
+		item.NotifyOnline, item.NotifyOffline, item.DesktopEnabled, item.EmailEnabled = online != 0, offline != 0, desktop != 0, email != 0
+		item.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) SavePresenceWatchRule(ctx context.Context, accountID string, item model.PresenceWatchRule) (model.PresenceWatchRule, error) {
+	item.UpdatedAt = time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO presence_watch_rule(account_id,user_id,display_name,notify_online,notify_offline,desktop_enabled,email_enabled,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(account_id,user_id) DO UPDATE SET display_name=excluded.display_name,notify_online=excluded.notify_online,notify_offline=excluded.notify_offline,desktop_enabled=excluded.desktop_enabled,email_enabled=excluded.email_enabled,updated_at=excluded.updated_at`, accountID, item.UserID, item.DisplayName, item.NotifyOnline, item.NotifyOffline, item.DesktopEnabled, item.EmailEnabled, item.UpdatedAt.Format(time.RFC3339Nano))
+	return item, err
+}
+
+func (s *Store) DeletePresenceWatchRule(ctx context.Context, accountID, userID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM presence_watch_rule WHERE account_id=? AND user_id=?`, accountID, userID)
+	return err
+}
+
+func (s *Store) PresenceWatchRule(ctx context.Context, accountID, userID string) (model.PresenceWatchRule, error) {
+	items, err := s.ListPresenceWatchRules(ctx, accountID)
+	if err != nil {
+		return model.PresenceWatchRule{}, err
+	}
+	for _, item := range items {
+		if item.UserID == userID {
+			return item, nil
+		}
+	}
+	return model.PresenceWatchRule{}, ErrNotFound
+}
+
+func (s *Store) UpdatePresenceState(ctx context.Context, accountID, userID, state string, at time.Time) (string, bool, error) {
+	var previous string
+	err := s.db.QueryRowContext(ctx, `SELECT state FROM presence_state WHERE account_id=? AND user_id=?`, accountID, userID).Scan(&previous)
+	existed := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", false, err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO presence_state(account_id,user_id,state,observed_at) VALUES(?,?,?,?) ON CONFLICT(account_id,user_id) DO UPDATE SET state=excluded.state,observed_at=excluded.observed_at`, accountID, userID, state, at.Format(time.RFC3339Nano))
+	return previous, existed, err
+}
+
+func (s *Store) SaveSecureSecret(ctx context.Context, key string, value []byte) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO secure_secret(setting_key,encrypted_value,updated_at) VALUES(?,?,?) ON CONFLICT(setting_key) DO UPDATE SET encrypted_value=excluded.encrypted_value,updated_at=excluded.updated_at`, key, value, time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}
+func (s *Store) LoadSecureSecret(ctx context.Context, key string) ([]byte, error) {
+	var value []byte
+	err := s.db.QueryRowContext(ctx, `SELECT encrypted_value FROM secure_secret WHERE setting_key=?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return value, err
+}
+
+func (s *Store) RecordNotificationDelivery(ctx context.Context, accountID string, item model.NotificationDelivery) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `INSERT INTO notification_delivery(account_id,user_id,display_name,event_type,channel,status,message,observed_at,sent_at,error) VALUES(?,?,?,?,?,?,?,?,?,?)`, accountID, item.UserID, item.DisplayName, item.EventType, item.Channel, item.Status, item.Message, item.ObservedAt.Format(time.RFC3339Nano), formatOptionalTime(item.SentAt), item.Error)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func formatOptionalTime(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func (s *Store) ListNotificationDeliveries(ctx context.Context, accountID string, limit int) ([]model.NotificationDelivery, error) {
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,user_id,display_name,event_type,channel,status,message,observed_at,sent_at,error FROM notification_delivery WHERE account_id=? ORDER BY id DESC LIMIT ?`, accountID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []model.NotificationDelivery{}
+	for rows.Next() {
+		var item model.NotificationDelivery
+		var observed, sent string
+		if err := rows.Scan(&item.ID, &item.UserID, &item.DisplayName, &item.EventType, &item.Channel, &item.Status, &item.Message, &observed, &sent, &item.Error); err != nil {
+			return nil, err
+		}
+		item.ObservedAt, _ = time.Parse(time.RFC3339Nano, observed)
+		if sent != "" {
+			value, _ := time.Parse(time.RFC3339Nano, sent)
+			item.SentAt = &value
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (s *Store) ensureColumn(ctx context.Context, table, column, definition string) error {

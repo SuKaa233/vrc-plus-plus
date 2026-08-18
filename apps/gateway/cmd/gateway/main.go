@@ -22,6 +22,7 @@ import (
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/localapi"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/media"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/pipeline"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/presence"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/security"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/singleinstance"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/storage"
@@ -36,7 +37,7 @@ const (
 )
 
 var (
-	version           = "0.9.0-beta.2"
+	version           = "0.9.0-beta.8"
 	defaultUpdateURLs = ""
 )
 
@@ -111,6 +112,9 @@ func run() error {
 	}()
 	pipelineManager := pipeline.New(vrcClient, eventBus, logger, envOrDefault("VRC_HARBOR_PIPELINE_URL", "wss://pipeline.vrchat.cloud"))
 	defer pipelineManager.Stop()
+	presenceService := presence.New(store, protector, eventBus, tray.Notify, logger)
+	presenceService.Start(ctx)
+	defer presenceService.Stop()
 	mediaService, err := media.New(filepath.Join(*dataDirectory, "media-cache"), vrcClient, logger)
 	if err != nil {
 		return err
@@ -126,6 +130,7 @@ func run() error {
 		Store:        store,
 		GameLog:      gameLogWatcher,
 		Updater:      updateService,
+		Presence:     presenceService,
 		Shutdown:     shutdownRequest,
 	}, vrcClient, diagnosticService, eventBus, pipelineManager, mediaService, logger)
 	if err != nil {

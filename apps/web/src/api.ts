@@ -58,6 +58,10 @@ export interface Friend {
   online: boolean
 }
 
+export interface PresenceWatchRule { userId:string; displayName:string; notifyOnline:boolean; notifyOffline:boolean; desktopEnabled:boolean; emailEnabled:boolean; updatedAt:string; currentState?:'online'|'offline' }
+export interface EmailSettings { enabled:boolean; host:string; port:number; security:'starttls'|'tls'; username:string; from:string; to:string; configured:boolean; password?:string }
+export interface NotificationDelivery { id:number; userId?:string; displayName?:string; eventType:string; channel:string; status:string; message:string; observedAt:string; sentAt?:string; error?:string }
+
 export interface UserProfile {
   id: string
   displayName: string
@@ -611,6 +615,14 @@ export class LocalApi {
       body: JSON.stringify({ mode, proxyUrl }),
     })
   }
+
+  presenceWatches(): Promise<PresenceWatchRule[]> { return this.request('/local/v1/presence-watches') }
+  savePresenceWatch(value: Omit<PresenceWatchRule, 'updatedAt'>): Promise<PresenceWatchRule> { return this.request(`/local/v1/presence-watches/${encodeURIComponent(value.userId)}`, { method:'PUT', body:JSON.stringify(value) }) }
+  deletePresenceWatch(userId:string): Promise<void> { return this.request(`/local/v1/presence-watches/${encodeURIComponent(userId)}`, { method:'DELETE' }) }
+  presenceEmail(): Promise<EmailSettings> { return this.request('/local/v1/presence-email') }
+  savePresenceEmail(value:EmailSettings): Promise<EmailSettings> { return this.request('/local/v1/presence-email', { method:'PUT', body:JSON.stringify(value) }) }
+  testPresenceEmail(): Promise<{sent:boolean}> { return this.request('/local/v1/presence-email/test', { method:'POST' }) }
+  presenceDeliveries(): Promise<NotificationDelivery[]> { return this.request('/local/v1/presence-deliveries') }
 
   mediaUrl(remoteUrl?: string): string {
     if (!remoteUrl) return ''

@@ -11,11 +11,11 @@ body {
   font-family: "Segoe UI Variable", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   transition: color .18s ease, background-color .18s ease;
-	font-size: 14px;
+	font-size: calc(14px * var(--ui-scale, 1));
   max-width: 100%;
   overflow-x: hidden;
 }
-.app-shell { zoom: var(--ui-scale, 1); }
+.app-shell { width: 100%; }
 
 button, input, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
@@ -350,3 +350,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .metric-grid article > svg { color: var(--muted); }
 .icon-tile,
 .status-orb { border: 1px solid var(--line); border-radius: 7px; background: var(--surface-muted); }
+
+/* Windows/WebView2 already applies system DPI. Scale typography only to avoid double scaling. */
+.console-header p { display: none; }
+.panel-kicker, .route-pill, .metric-grid article > span, .source-chip, .realtime-chip,
+.snapshot-note, .section-link, .sidebar-user small, .friend-copy small,
+.friend-description, .world-copy small, .world-copy p, .world-image span,
+.settings-modal > p, .mode-grid small, .proxy-field small, .runtime-strip > span {
+  font-size: calc(11px * var(--ui-scale, 1));
+}
+.sidebar nav button, .sidebar-bottom > button, .friend-copy strong, .world-copy strong,
+button, input, select { font-size: calc(13px * var(--ui-scale, 1)); }

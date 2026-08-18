@@ -24,6 +24,7 @@ import (
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/media"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/pipeline"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/presence"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/storage"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/updater"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/vrchat"
@@ -38,6 +39,7 @@ type Config struct {
 	Store        *storage.Store
 	GameLog      *gamelog.Watcher
 	Updater      *updater.Service
+	Presence     *presence.Service
 	Shutdown     chan struct{}
 }
 
@@ -52,6 +54,7 @@ type Server struct {
 	store       *storage.Store
 	gameLog     *gamelog.Watcher
 	updater     *updater.Service
+	presence    *presence.Service
 	shutdown    chan struct{}
 	logger      *slog.Logger
 	static      http.Handler
@@ -73,6 +76,7 @@ func New(config Config, vrchatClient *vrchat.Client, diagnosticService *diagnost
 		store:       config.Store,
 		gameLog:     config.GameLog,
 		updater:     config.Updater,
+		presence:    config.Presence,
 		shutdown:    config.Shutdown,
 		logger:      logger,
 		static:      http.FileServer(http.FS(config.StaticFS)),
@@ -134,6 +138,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /local/v1/events/stream", s.streamEvents)
 	mux.HandleFunc("GET /local/v1/network", s.getNetwork)
 	mux.HandleFunc("PUT /local/v1/network", s.updateNetwork)
+	mux.HandleFunc("GET /local/v1/presence-watches", s.listPresenceWatches)
+	mux.HandleFunc("PUT /local/v1/presence-watches/{userID}", s.savePresenceWatch)
+	mux.HandleFunc("DELETE /local/v1/presence-watches/{userID}", s.deletePresenceWatch)
+	mux.HandleFunc("GET /local/v1/presence-email", s.getPresenceEmail)
+	mux.HandleFunc("PUT /local/v1/presence-email", s.savePresenceEmail)
+	mux.HandleFunc("POST /local/v1/presence-email/test", s.testPresenceEmail)
+	mux.HandleFunc("GET /local/v1/presence-deliveries", s.listPresenceDeliveries)
 	if s.media != nil {
 		mux.Handle("GET /local/v1/media", s.media)
 	}

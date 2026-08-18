@@ -1,5 +1,7 @@
 # VRC++ 功能完善路线
 
+> 2026-08-17 新增规划：[好友上下线提醒与强关注通知实施方案](friend-presence-notification-plan.md)。建议先完成 Pipeline 驱动的本机托盘提醒，再独立实现 DPAPI 保护的 SMTP 邮件 Outbox；不采用逐好友高频 REST 轮询。
+
 > 最后更新：2026-08-15  
 > 原则：先补高频只读能力和国内线路稳定性，再做历史统计与上游写操作。实际完成度仍以 [实现状态批注](implementation-status.md) 为准。
 

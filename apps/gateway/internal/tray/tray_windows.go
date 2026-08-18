@@ -6,6 +6,7 @@ import (
 	_ "embed"
 
 	"github.com/getlantern/systray"
+	"github.com/go-toast/toast"
 )
 
 //go:embed icon.ico
@@ -40,3 +41,7 @@ func Start(openApp func(), openBrowser func(), shutdown chan<- struct{}) {
 }
 
 func Stop() { systray.Quit() }
+
+func Notify(title, message string) error {
+	return (&toast.Notification{AppID: "VRC++", Title: title, Message: message}).Push()
+}

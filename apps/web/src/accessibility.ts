@@ -1,9 +1,9 @@
 export const UI_SCALE_KEY = 'vrc-harbor-ui-scale'
-export const DEFAULT_UI_SCALE = 1.15
+export const DEFAULT_UI_SCALE = 1
 
 export function normalizeUIScale(value: number) {
   if (!Number.isFinite(value)) return DEFAULT_UI_SCALE
-  return Math.round(Math.min(1.4, Math.max(.9, value)) * 20) / 20
+  return Math.round(Math.min(1.25, Math.max(.9, value)) * 20) / 20
 }
 
 export function readUIScale(storage: Pick<Storage, 'getItem'> = localStorage) {
