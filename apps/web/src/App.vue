@@ -665,19 +665,40 @@ async function expandDiscoveryUser(profile: UserProfile) {
   discoveryGroupMembers.value = [];
   discoverySelectedGroupID.value = "";
   discoveryExpandedUser.value = profile;
+  const messages: string[] = [];
   try {
-    const [detail, groups] = await Promise.all([
-      api.user(profile.id),
-      api.groups(profile.id),
-    ]);
+    const detail = await api.user(profile.id);
     discoveryExpandedUser.value = detail.items[0] ?? profile;
-    discoveryGroups.value = groups.items;
   } catch (cause) {
-    discoveryClueError.value =
+    messages.push(cause instanceof Error ? cause.message : "公开档案未完整读取");
+  }
+  try {
+    const groups = await api.groups(profile.id);
+    discoveryGroups.value = groups.items;
+    const representedID = discoveryExpandedUser.value?.representedGroup?.id;
+    const initialGroup =
+      groups.items.find((item) => item.id === representedID) ?? groups.items[0];
+    if (initialGroup) {
+      discoverySelectedGroupID.value = initialGroup.id;
+      try {
+        const members = await api.groupMembers(initialGroup.id, 100);
+        discoveryGroupMembers.value = members.items;
+      } catch (cause) {
+        messages.push(
+          cause instanceof Error
+            ? cause.message
+            : "首个群组的成员列表未公开",
+        );
+      }
+    }
+  } catch (cause) {
+    messages.push(
       cause instanceof Error
         ? cause.message
-        : "该用户的群组关系对当前账号不可见";
+        : "该用户的群组关系对当前账号不可见",
+    );
   } finally {
+    discoveryClueError.value = messages.join("；");
     discoveryExpanding.value = false;
   }
 }
