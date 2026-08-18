@@ -102,6 +102,48 @@ type groupPayload struct {
 	LastPostReadAt    time.Time `json:"lastPostReadAt"`
 }
 
+type groupMemberUserPayload struct {
+	ID                             string `json:"id"`
+	DisplayName                    string `json:"displayName"`
+	ImageURL                       string `json:"imageUrl"`
+	IconURL                        string `json:"iconUrl"`
+	ThumbnailURL                   string `json:"thumbnailUrl"`
+	ProfilePicOverride             string `json:"profilePicOverride"`
+	ProfilePicOverrideThumbnail    string `json:"profilePicOverrideThumbnail"`
+	CurrentAvatarThumbnailImageURL string `json:"currentAvatarThumbnailImageUrl"`
+	Status                         string `json:"status"`
+	StatusDescription              string `json:"statusDescription"`
+}
+
+type groupMemberPayload struct {
+	UserID         string                 `json:"userId"`
+	GroupID        string                 `json:"groupId"`
+	DisplayName    string                 `json:"displayName"`
+	ImageURL       string                 `json:"imageUrl"`
+	RoleIDs        []string               `json:"roleIds"`
+	IsRepresenting bool                   `json:"isRepresenting"`
+	JoinedAt       time.Time              `json:"joinedAt"`
+	User           groupMemberUserPayload `json:"user"`
+}
+
+func (item groupMemberPayload) toModel(groupID string) model.GroupMember {
+	userID, displayName, imageURL := item.UserID, item.DisplayName, item.ImageURL
+	if item.User.ID != "" {
+		userID = item.User.ID
+	}
+	if item.User.DisplayName != "" {
+		displayName = item.User.DisplayName
+	}
+	if item.User.ImageURL != "" {
+		imageURL = item.User.ImageURL
+	}
+	return model.GroupMember{UserID: userID, GroupID: groupID, DisplayName: displayName, ImageURL: imageURL,
+		IconURL: item.User.IconURL, ThumbnailURL: item.User.ThumbnailURL,
+		ProfilePicOverride: item.User.ProfilePicOverride, ProfilePicOverrideThumbnail: item.User.ProfilePicOverrideThumbnail,
+		CurrentAvatarThumbnailImageURL: item.User.CurrentAvatarThumbnailImageURL, Status: item.User.Status,
+		StatusDescription: item.User.StatusDescription, RoleIDs: item.RoleIDs, IsRepresenting: item.IsRepresenting, JoinedAt: item.JoinedAt}
+}
+
 func (item groupPayload) toModel() model.Group {
 	return model.Group{ID: item.GroupID, Name: item.Name, ShortCode: item.ShortCode, Description: item.Description,
 		IconURL: item.IconURL, BannerURL: item.BannerURL, OwnerID: item.OwnerID, MemberCount: item.MemberCount,
@@ -815,6 +857,52 @@ func (c *Client) ListUserGroups(ctx context.Context, userID string, refresh bool
 			return items[i].IsRepresenting
 		}
 		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+	})
+	return saveEnvelope(ctx, c.store, cacheKey, items, groupsCacheTTL)
+}
+
+func (c *Client) ListGroupMembers(ctx context.Context, groupID string, limit int, refresh bool) (model.DataEnvelope[model.GroupMember], error) {
+	if !validGroupID(groupID) {
+		return model.DataEnvelope[model.GroupMember]{}, fmt.Errorf("%w: invalid group id", ErrInvalidRequest)
+	}
+	if limit < 1 || limit > 200 {
+		return model.DataEnvelope[model.GroupMember]{}, fmt.Errorf("%w: group member limit must be between 1 and 200", ErrInvalidRequest)
+	}
+	cacheKey := fmt.Sprintf("group-members:%s:%d", groupID, limit)
+	if !refresh {
+		if cached, err := loadFreshCache[model.GroupMember](ctx, c.store, cacheKey); err == nil {
+			return cached, nil
+		}
+	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	items := make([]model.GroupMember, 0, limit)
+	for offset := 0; offset < limit; offset += 100 {
+		pageSize := 100
+		if remaining := limit - offset; remaining < pageSize {
+			pageSize = remaining
+		}
+		query := url.Values{"n": {strconv.Itoa(pageSize)}, "offset": {strconv.Itoa(offset)}}
+		data, err := c.getJSON(ctx, "groups/"+url.PathEscape(groupID)+"/members?"+query.Encode())
+		if err != nil {
+			return loadCache[model.GroupMember](ctx, c.store, cacheKey, err)
+		}
+		var payload []groupMemberPayload
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return loadCache[model.GroupMember](ctx, c.store, cacheKey, fmt.Errorf("parse VRChat group members: %w", err))
+		}
+		for _, item := range payload {
+			member := item.toModel(groupID)
+			if strings.HasPrefix(member.UserID, "usr_") && member.DisplayName != "" {
+				items = append(items, member)
+			}
+		}
+		if len(payload) < pageSize {
+			break
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return strings.ToLower(items[i].DisplayName) < strings.ToLower(items[j].DisplayName)
 	})
 	return saveEnvelope(ctx, c.store, cacheKey, items, groupsCacheTTL)
 }

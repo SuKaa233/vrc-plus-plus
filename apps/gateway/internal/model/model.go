@@ -191,6 +191,23 @@ type Group struct {
 	LastPostReadAt    time.Time `json:"lastPostReadAt,omitempty"`
 }
 
+type GroupMember struct {
+	UserID                         string    `json:"userId"`
+	GroupID                        string    `json:"groupId,omitempty"`
+	DisplayName                    string    `json:"displayName"`
+	ImageURL                       string    `json:"imageUrl,omitempty"`
+	IconURL                        string    `json:"iconUrl,omitempty"`
+	ThumbnailURL                   string    `json:"thumbnailUrl,omitempty"`
+	ProfilePicOverride             string    `json:"profilePicOverride,omitempty"`
+	ProfilePicOverrideThumbnail    string    `json:"profilePicOverrideThumbnail,omitempty"`
+	CurrentAvatarThumbnailImageURL string    `json:"currentAvatarThumbnailImageUrl,omitempty"`
+	Status                         string    `json:"status,omitempty"`
+	StatusDescription              string    `json:"statusDescription,omitempty"`
+	RoleIDs                        []string  `json:"roleIds,omitempty"`
+	IsRepresenting                 bool      `json:"isRepresenting"`
+	JoinedAt                       time.Time `json:"joinedAt,omitempty"`
+}
+
 type GroupPost struct {
 	ID         string    `json:"id"`
 	GroupID    string    `json:"groupId"`

@@ -106,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /local/v1/vrchat-favorites", s.listUpstreamWorldFavorites)
 	mux.HandleFunc("GET /local/v1/vrchat-favorite-groups", s.listFavoriteGroups)
 	mux.HandleFunc("GET /local/v1/groups", s.listGroups)
+	mux.HandleFunc("GET /local/v1/groups/{groupID}/members", s.listGroupMembers)
 	mux.HandleFunc("GET /local/v1/groups/{groupID}/posts", s.listGroupPosts)
 	mux.HandleFunc("GET /local/v1/groups/{groupID}/instances", s.listGroupInstances)
 	mux.HandleFunc("GET /local/v1/groups/{groupID}/calendar", s.listGroupCalendarEvents)
@@ -309,6 +310,17 @@ func (s *Server) listGroups(writer http.ResponseWriter, request *http.Request) {
 	ctx, cancel := contextWithTimeout(request, 25*time.Second)
 	defer cancel()
 	items, err := s.vrchat.ListUserGroups(ctx, userID, request.URL.Query().Get("refresh") == "1")
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, items)
+}
+
+func (s *Server) listGroupMembers(writer http.ResponseWriter, request *http.Request) {
+	ctx, cancel := contextWithTimeout(request, 35*time.Second)
+	defer cancel()
+	items, err := s.vrchat.ListGroupMembers(ctx, request.PathValue("groupID"), queryInt(request, "limit", 100), request.URL.Query().Get("refresh") == "1")
 	if err != nil {
 		writeError(writer, err)
 		return

@@ -54,6 +54,8 @@ import {
   type FriendNetwork,
   type FavoriteGroup,
   type GameLogStatus,
+  type Group,
+  type GroupMember,
   type Instance,
   type MutualFriend,
   type NetworkState,
@@ -197,6 +199,12 @@ const notificationActingID = ref("");
 const discoveryResults = ref<UserProfile[]>([]);
 const discoveryStatuses = ref<Record<string, FriendStatus>>({});
 const discoveryLoading = ref(false);
+const discoveryExpandedUser = ref<UserProfile | null>(null);
+const discoveryGroups = ref<Group[]>([]);
+const discoveryGroupMembers = ref<GroupMember[]>([]);
+const discoverySelectedGroupID = ref("");
+const discoveryExpanding = ref(false);
+const discoveryClueError = ref("");
 type RecentAccessItem = {
   kind: "friend" | "world" | "avatar";
   id: string;
@@ -314,9 +322,9 @@ const viewCopy = computed(
           ],
           alerts: ["Alerts", "Presence alerts", "Desktop and email delivery."],
           discovery: [
-            "Discover",
-            "Discover people",
-            "Search users and recent encounters.",
+            "Strangers",
+            "Stranger explorer",
+            "Public relationship clues and recent encounters.",
           ],
           network: [
             "Network",
@@ -356,7 +364,7 @@ const viewCopy = computed(
             "公开资料、本机证据、世界足迹与已观察关系。",
           ],
           alerts: ["提醒", "上线提醒", "托盘与邮件推送。"],
-          discovery: ["发现", "发现好友", "搜索用户和最近遇见的人。"],
+          discovery: ["陌生人", "陌生人查看", "公开关系线索、群组与最近同房记录。"],
           network: ["关系网", "好友关系网", "看看好友圈与共同连接。"],
           worlds: ["世界", "世界与实例", "发现世界与可加入实例。"],
           groups: ["群组", "群组中心", "群组、活动与公告。"],
@@ -647,6 +655,48 @@ async function searchDiscoveryUsers(query: string) {
     error.value = cause instanceof Error ? cause.message : "用户搜索失败";
   } finally {
     discoveryLoading.value = false;
+  }
+}
+
+async function expandDiscoveryUser(profile: UserProfile) {
+  discoveryExpanding.value = true;
+  discoveryClueError.value = "";
+  discoveryGroups.value = [];
+  discoveryGroupMembers.value = [];
+  discoverySelectedGroupID.value = "";
+  discoveryExpandedUser.value = profile;
+  try {
+    const [detail, groups] = await Promise.all([
+      api.user(profile.id),
+      api.groups(profile.id),
+    ]);
+    discoveryExpandedUser.value = detail.items[0] ?? profile;
+    discoveryGroups.value = groups.items;
+  } catch (cause) {
+    discoveryClueError.value =
+      cause instanceof Error
+        ? cause.message
+        : "该用户的群组关系对当前账号不可见";
+  } finally {
+    discoveryExpanding.value = false;
+  }
+}
+
+async function loadDiscoveryGroup(group: Group) {
+  discoveryExpanding.value = true;
+  discoveryClueError.value = "";
+  discoverySelectedGroupID.value = group.id;
+  discoveryGroupMembers.value = [];
+  try {
+    const result = await api.groupMembers(group.id, 100);
+    discoveryGroupMembers.value = result.items;
+  } catch (cause) {
+    discoveryClueError.value =
+      cause instanceof Error
+        ? cause.message
+        : "群组成员列表未公开，或当前账号没有查看权限";
+  } finally {
+    discoveryExpanding.value = false;
   }
 }
 
@@ -1792,7 +1842,7 @@ onBeforeUnmount(() => {
             :class="{ active: activeView === 'discovery' }"
             @click="selectView('discovery')"
           >
-            <Compass :size="19" /> {{ l("发现", "Discover") }}</button
+            <Compass :size="19" /> {{ l("陌生人", "Strangers") }}</button
           ><button
             :class="{ active: activeView === 'network' }"
             @click="selectView('network')"
@@ -2007,12 +2057,21 @@ onBeforeUnmount(() => {
             :events="activityEvents"
             :results="discoveryResults"
             :statuses="discoveryStatuses"
+            :groups="discoveryGroups"
+            :group-members="discoveryGroupMembers"
+            :expanded-user="discoveryExpandedUser"
+            :selected-group-id="discoverySelectedGroupID"
             :loading="discoveryLoading"
+            :expanding="discoveryExpanding"
+            :clue-error="discoveryClueError"
             :acting-id="friendRequestActingID"
+            :storage-key="session.user?.id ?? 'default'"
             :media-url="api.mediaUrl.bind(api)"
             @search="searchDiscoveryUsers"
             @open="openDiscoveryUser"
             @request="sendUserFriendRequest"
+            @expand-user="expandDiscoveryUser"
+            @load-group="loadDiscoveryGroup"
           />
           <ActivityView
             v-if="activeView === 'activity'"

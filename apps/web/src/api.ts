@@ -199,6 +199,23 @@ export interface Group {
   lastPostReadAt?: string
 }
 
+export interface GroupMember {
+  userId: string
+  groupId?: string
+  displayName: string
+  imageUrl?: string
+  iconUrl?: string
+  thumbnailUrl?: string
+  profilePicOverride?: string
+  profilePicOverrideThumbnail?: string
+  currentAvatarThumbnailImageUrl?: string
+  status?: string
+  statusDescription?: string
+  roleIds?: string[]
+  isRepresenting: boolean
+  joinedAt?: string
+}
+
 export interface GroupPost {
   id: string
   groupId: string
@@ -562,6 +579,10 @@ export class LocalApi {
 
   groups(userId: string, refresh = false): Promise<DataEnvelope<Group>> {
     return this.request(`/local/v1/groups?${new URLSearchParams({ userId, refresh: refresh ? '1' : '0' })}`)
+  }
+
+  groupMembers(groupId: string, limit = 100, refresh = false): Promise<DataEnvelope<GroupMember>> {
+    return this.request(`/local/v1/groups/${encodeURIComponent(groupId)}/members?${new URLSearchParams({ limit: String(limit), refresh: refresh ? '1' : '0' })}`)
   }
 
   groupPosts(groupId: string, refresh = false): Promise<DataEnvelope<GroupPost>> {

@@ -45,6 +45,17 @@ describe('LocalApi', () => {
     expect(fetchMock.mock.calls[1][0]).toBe('/local/v1/users/usr_friend/mutual-friends')
   })
 
+  it('loads visible group members through the bounded local route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [], source: 'live', fetchedAt: new Date().toISOString(), stale: false,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await new LocalApi().groupMembers('grp_public', 100)
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/local/v1/groups/grp_public/members?limit=100&refresh=0')
+  })
+
   it('uses explicit local-only routes for annotations and media cache clearing', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({

@@ -166,6 +166,11 @@ func TestGroupsPostsInstancesAndFavoriteAvatars(t *testing.T) {
 			_ = json.NewEncoder(writer).Encode(map[string]any{"posts": []map[string]any{{"id": "not_test", "groupId": "grp_test", "title": "公告", "text": "今晚集合"}}})
 		case "/groups/grp_test/instances":
 			_ = json.NewEncoder(writer).Encode([]map[string]any{{"instanceId": "123", "location": "wrld_test:123", "memberCount": 3, "world": map[string]any{"id": "wrld_test", "name": "Group World"}}})
+		case "/groups/grp_test/members":
+			if request.URL.Query().Get("n") != "100" || request.URL.Query().Get("offset") != "0" {
+				t.Fatalf("unexpected member query: %s", request.URL.RawQuery)
+			}
+			_ = json.NewEncoder(writer).Encode([]map[string]any{{"groupId": "grp_test", "userId": "usr_member", "roleIds": []string{"grol_test"}, "user": map[string]any{"id": "usr_member", "displayName": "Public Member", "profilePicOverrideThumbnail": "https://example.com/member.png"}}})
 		case "/calendar/grp_test":
 			_ = json.NewEncoder(writer).Encode(map[string]any{"results": []map[string]any{{"id": "cal_test", "title": "Friday Meetup", "startsAt": "2026-08-21T12:00:00Z", "endsAt": "2026-08-21T14:00:00Z", "interestedUserCount": 8, "userInterest": map[string]any{"isFollowing": true}}}})
 		case "/avatars/favorites":
@@ -190,6 +195,10 @@ func TestGroupsPostsInstancesAndFavoriteAvatars(t *testing.T) {
 	instances, err := client.ListGroupInstances(context.Background(), "grp_test", false)
 	if err != nil || len(instances.Items) != 1 || instances.Items[0].World.Name != "Group World" {
 		t.Fatalf("instances = %#v, %v", instances, err)
+	}
+	members, err := client.ListGroupMembers(context.Background(), "grp_test", 100, false)
+	if err != nil || len(members.Items) != 1 || members.Items[0].DisplayName != "Public Member" || members.Items[0].UserID != "usr_member" {
+		t.Fatalf("members = %#v, %v", members, err)
 	}
 	calendar, err := client.ListGroupCalendarEvents(context.Background(), "grp_test", "2026-08", false)
 	if err != nil || len(calendar.Items) != 1 || calendar.Items[0].Title != "Friday Meetup" || !calendar.Items[0].Following {
