@@ -312,6 +312,17 @@ func (s *Store) ListNotificationDeliveries(ctx context.Context, accountID string
 	return items, rows.Err()
 }
 
+func (s *Store) EmailDeliveryAllowed(ctx context.Context, accountID, userID string, now time.Time) (bool, error) {
+	var hourly int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_delivery WHERE account_id=? AND channel='email' AND status='sent' AND observed_at>=?`, accountID, now.Add(-time.Hour).Format(time.RFC3339Nano)).Scan(&hourly)
+	if err != nil || hourly >= 20 {
+		return false, err
+	}
+	var recent int
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_delivery WHERE account_id=? AND user_id=? AND channel='email' AND status='sent' AND observed_at>=?`, accountID, userID, now.Add(-10*time.Minute).Format(time.RFC3339Nano)).Scan(&recent)
+	return recent == 0, err
+}
+
 func (s *Store) ensureColumn(ctx context.Context, table, column, definition string) error {
 	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
 	if err != nil {

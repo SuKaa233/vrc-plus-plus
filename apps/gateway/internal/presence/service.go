@@ -110,6 +110,10 @@ func (s *Service) handle(ctx context.Context, event model.DomainEvent) {
 		s.deliver(ctx, accountID, model.NotificationDelivery{UserID: userID, DisplayName: name, EventType: state, Channel: "desktop", Message: message, ObservedAt: event.ObservedAt}, func() error { return s.notify("好友动态", message) })
 	}
 	if rule.EmailEnabled {
+		allowed, limitErr := s.store.EmailDeliveryAllowed(ctx, accountID, userID, time.Now().UTC())
+		if limitErr != nil || !allowed {
+			return
+		}
 		s.deliver(ctx, accountID, model.NotificationDelivery{UserID: userID, DisplayName: name, EventType: state, Channel: "email", Message: message, ObservedAt: event.ObservedAt}, func() error { return s.SendEmail(ctx, "VRC++ 好友动态", message) })
 	}
 }
@@ -166,6 +170,14 @@ func (s *Service) SaveEmailSettings(ctx context.Context, item model.EmailSetting
 		if _, err := mail.ParseAddress(value); err != nil {
 			return item, errors.New("发件或收件邮箱格式无效")
 		}
+	}
+	fromAddress, _ := mail.ParseAddress(item.From)
+	toAddress, _ := mail.ParseAddress(item.To)
+	if !strings.EqualFold(fromAddress.Address, toAddress.Address) {
+		return item, errors.New("为防止滥用，接收邮箱必须与发件邮箱相同")
+	}
+	if strings.ContainsAny(item.Host, "\r\n") || strings.ContainsAny(item.Username, "\r\n") {
+		return item, errors.New("SMTP 配置包含无效字符")
 	}
 	item.Configured = false
 	raw, _ := json.Marshal(item)
