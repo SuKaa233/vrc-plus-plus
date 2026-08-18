@@ -37,8 +37,8 @@ export function buildTonightCards(friends: Friend[], worlds: World[], favoriteId
   const worldByID = new Map(worlds.map((item) => [item.id, item]))
   const favorites = new Set(favoriteIds)
   const coverage = coverageDays(events)
-  const bounds = timeBounds(0.5)
-  return [...groups.entries()].map(([location, people]) => {
+  const liveBounds = timeBounds(0.5)
+  const live = [...groups.entries()].map(([location, people]) => {
     const worldID = location.split(':')[0]
     const world = worldByID.get(worldID)
     const favorite = favorites.has(worldID)
@@ -46,8 +46,37 @@ export function buildTonightCards(friends: Friend[], worlds: World[], favoriteId
     const reasons = [`${people.length} 位好友位于同一可加入实例`, `包括 ${people.slice(0, 3).map((item) => item.displayName).join('、')}`]
     if (favorite) reasons.push('这个世界在你的 VRChat 收藏中')
     if (!world) reasons.push('世界资料尚未缓存，进入详情后可补充')
-    return { id: `route:${location}`, kind: 'route' as const, title: world?.name || `${people.length} 位好友所在世界`, summary: people.length > 1 ? '适合直接加入熟人聚集实例' : `可以去找 ${people[0].displayName}`, score, reasons, coverageDays: coverage, ...bounds, targetWorldId: worldID, location }
-  }).sort((left, right) => right.score - left.score || left.title.localeCompare(right.title)).slice(0, 3)
+    return { id: `route:${location}`, kind: 'route' as const, title: world?.name || `${people.length} 位好友所在世界`, summary: people.length > 1 ? '实时可加入：熟人正在同一实例' : `实时可加入：可以去找 ${people[0].displayName}`, score, reasons, coverageDays: coverage, ...liveBounds, targetWorldId: worldID, location }
+  }).sort((left, right) => right.score - left.score || left.title.localeCompare(right.title))
+
+  const cards:InsightCard[] = live.slice(0,3)
+  const usedWorlds = new Set(cards.map(item=>item.targetWorldId))
+  const history = new Map<string,{count:number;last:string}>()
+  for (const event of events) {
+    const worldID = event.worldId || (event.location?.startsWith('wrld_') ? event.location.split(':')[0] : '')
+    if (!worldID) continue
+    const current = history.get(worldID) || { count:0, last:event.observedAt }
+    current.count += 1
+    if (event.observedAt > current.last) current.last = event.observedAt
+    history.set(worldID,current)
+  }
+  const fallbackBounds = timeBounds(12)
+  const fallback = worlds.filter(world=>!usedWorlds.has(world.id)).map(world=>{
+    const seen = history.get(world.id)
+    const favorite = favorites.has(world.id)
+    const popularity = Math.min(25,Math.round(Math.log10(Math.max(1,world.visits||world.favorites||1))*5))
+    const score = (favorite?38:0) + Math.min(36,(seen?.count||0)*4) + popularity + Math.min(15,world.occupants||0)
+    const source = favorite&&seen?'收藏 + 本机历史':favorite?'收藏世界':seen?'本机历史':'热门公开世界'
+    const reasons:string[] = []
+    if (favorite) reasons.push('已在你的 VRChat 收藏中')
+    if (seen) reasons.push(`本机记录出现 ${seen.count} 次，最近 ${new Date(seen.last).toLocaleDateString('zh-CN')}`)
+    if (world.occupants) reasons.push(`当前公开占用人数约 ${world.occupants}`)
+    if (!reasons.length) reasons.push(`热门度参考：${world.visits||world.favorites||0}`)
+    reasons.push('这是世界建议，不代表有好友正在其中')
+    return { id:`recommend:${world.id}`,kind:'route' as const,title:world.name,summary:`${source}推荐，可先查看世界与公开实例`,score,reasons,coverageDays:coverage,...fallbackBounds,targetWorldId:world.id }
+  }).sort((a,b)=>b.score-a.score||a.title.localeCompare(b.title))
+  for (const card of fallback) { if (cards.length>=3) break; cards.push(card) }
+  return cards
 }
 
 export function buildReunionCards(friends: Friend[], events: ActivityEvent[], now = new Date(), minDays = 7): InsightCard[] {
@@ -75,6 +104,7 @@ function patternCards(events: ActivityEvent[], friends: Friend[], predicate: (da
 
 export function queryLocalSocial(query: string, friends: Friend[], worlds: World[], events: ActivityEvent[], network: FriendNetwork | null): LocalQueryResult {
   const text = query.trim().toLocaleLowerCase()
+  if (/今晚|去哪|推荐|路线/.test(text)) return { intent:'tonight', label:'今晚可执行建议', cards:buildTonightCards(friends,worlds,[],events), hint:'优先实时可加入好友实例；不足三条时用本机历史和热门世界补足，并明确标注证据性质。' }
   if (/没见|重逢|很久|30\s*天/.test(text)) return { intent:'reunion', label:'很久没见但当前在线', cards:buildReunionCards(friends,events,new Date(),/30\s*天/.test(text)?30:7) }
   if (/周五|星期五|礼拜五/.test(text)) return { intent:'friday-night', label:'周五晚上的常遇好友', cards:patternCards(events,friends,(date)=>date.getDay()===5&&date.getHours()>=18,'周五晚上') }
   if (/跨圈|朋友圈|连接.*圈|桥梁/.test(text) && network) {

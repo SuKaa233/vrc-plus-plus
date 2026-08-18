@@ -278,6 +278,9 @@ const visibleWorlds = computed(() => {
   const items = [...byID.values()];
   return activeView.value === "overview" ? items.slice(0, 8) : items;
 });
+const compassFavoriteIDs = computed(() => [
+  ...new Set([...Object.keys(worldFavorites.value), ...Object.keys(upstreamWorldFavorites.value)]),
+]);
 const showFriends = computed(() => false);
 const showWorlds = computed(() => activeView.value === "worlds");
 const selectedAnnotation = computed(() =>
@@ -455,6 +458,7 @@ function selectView(view: View) {
   activeView.value = view;
   if (view === "network" || view === "journey" || view === "focus")
     void loadFriendNetwork();
+  if (view === "compass") void refreshCompassData();
   if (view === "journey") void refreshSystemCenter();
   if (view === "activity" || view === "focus") void loadActivity();
   if (view === "discovery")
@@ -1174,6 +1178,23 @@ async function loadActivity() {
   )
     error.value = "本机活动历史读取失败";
   activityLoading.value = false;
+}
+
+async function refreshCompassData() {
+  dataLoading.value = true;
+  error.value = "";
+  const results = await Promise.allSettled([
+    api.friends().then((value) => { friends.value = value; }),
+    api.worlds("", 0, 48).then((value) => { worlds.value = value; }),
+    api.activity(30, 500).then((value) => { activityEvents.value = value; }),
+    api.friendNetwork().then((value) => { friendNetwork.value = value; }),
+    api.worldFavorites().then((value) => { worldFavorites.value = Object.fromEntries(value.map((item) => [item.world.id, item])); }),
+    api.upstreamWorldFavorites().then((value) => { upstreamWorldFavorites.value = Object.fromEntries(value.map((item) => [item.world.id, item])); }),
+  ]);
+  const eventWorldIDs = activityEvents.value.map((item) => item.worldId || (item.location?.startsWith("wrld_") ? item.location.split(":")[0] : "")).filter(Boolean);
+  await hydrateVisibleWorlds(eventWorldIDs);
+  if (results.every((item) => item.status === "rejected")) error.value = "罗盘数据刷新失败，请检查网络与本机日志状态";
+  dataLoading.value = false;
 }
 
 async function clearActivity() {
@@ -2160,13 +2181,15 @@ onBeforeUnmount(() => {
             :worlds="visibleWorlds"
             :events="activityEvents"
             :network="friendNetwork"
-            :favorite-ids="Object.keys(upstreamWorldFavorites)"
+            :favorite-ids="compassFavoriteIDs"
             :storage-key="session.user?.id ?? 'default'"
             :realtime-label="realtimeLabel"
             :route-label="network.label"
+            :loading="dataLoading"
             @open-friend="openNetworkFriend"
             @open-world="openCompassWorld"
             @load-network="loadFriendNetwork"
+            @refresh="refreshCompassData"
           />
           <JourneyView
             v-if="activeView === 'journey'"

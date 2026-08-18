@@ -21,6 +21,16 @@ describe('stranger relationship graph', () => {
     expect(graph.edges.some(item=>item.source==='usr_bridge' && item.target==='usr_target')).toBe(true)
     expect(graph.edges.some(item=>item.kind==='co_presence' && item.target==='usr_bridge')).toBe(true)
   })
+  it('keeps every mutual friend and both confirmed sides of the intersection', () => {
+    const mutuals = Array.from({length:25},(_,index)=>({id:`usr_mutual_${index}`,displayName:`Mutual ${index}`}))
+    const graph = buildStrangerGraph({...input,mutuals})
+    expect(graph.mutualCount).toBe(25)
+    expect(graph.nodes.filter(item=>item.kind==='mutual')).toHaveLength(25)
+    expect(graph.edges.filter(item=>item.kind==='mutual')).toHaveLength(25)
+    expect(graph.edges.filter(item=>item.kind==='friend')).toHaveLength(25)
+    expect(graph.hiddenNodes).toBe(0)
+    expect(graph.height).toBeGreaterThan(580)
+  })
   it('keeps inferences evidence-labelled and includes coverage caveat', () => {
     const items = relationshipInsights(input)
     expect(items.some(item=>item.id==='mutual-route' && item.confidence==='中')).toBe(true)

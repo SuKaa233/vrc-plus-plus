@@ -37,7 +37,7 @@ const (
 )
 
 var (
-	version           = "0.9.0-beta.17"
+	version           = "0.9.0-beta.18"
 	defaultUpdateURLs = ""
 )
 

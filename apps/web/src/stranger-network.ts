@@ -4,7 +4,7 @@ export type StrangerNodeKind = 'self' | 'target' | 'mutual' | 'group' | 'candida
 export type StrangerEdgeKind = 'friend' | 'mutual' | 'membership' | 'candidate' | 'co_presence'
 export interface StrangerGraphNode { id:string; label:string; kind:StrangerNodeKind; x:number; y:number; imageUrl?:string; detail:string }
 export interface StrangerGraphEdge { source:string; target:string; kind:StrangerEdgeKind; label:string; evidence:'confirmed'|'observed' }
-export interface StrangerGraph { nodes:StrangerGraphNode[]; edges:StrangerGraphEdge[]; hiddenNodes:number }
+export interface StrangerGraph { nodes:StrangerGraphNode[]; edges:StrangerGraphEdge[]; hiddenNodes:number; height:number; mutualCount:number }
 export interface RelationshipInsight { id:string; title:string; summary:string; confidence:'高'|'中'|'低'; evidence:string[]; tone:'strong'|'balanced'|'caution' }
 export interface StrangerGraphInput {
   self:{ id:string; displayName:string; imageUrl?:string }
@@ -13,11 +13,6 @@ export interface StrangerGraphInput {
   groups:Group[]
   members:GroupMember[]
   events:ActivityEvent[]
-}
-
-function ring(index:number, total:number, cx:number, cy:number, rx:number, ry:number, start=-Math.PI/2) {
-  const angle = start + index / Math.max(total, 1) * Math.PI * 2
-  return { x:cx + Math.cos(angle)*rx, y:cy + Math.sin(angle)*ry }
 }
 
 function avatar(value:{ imageUrl?:string; profilePicOverride?:string; profilePicOverrideThumbnail?:string; currentAvatarThumbnailImageUrl?:string }) {
@@ -33,24 +28,34 @@ function overlapsInInstance(left:ActivityEvent[], right:ActivityEvent[]) {
 }
 
 export function buildStrangerGraph(input:StrangerGraphInput):StrangerGraph {
+  const mutuals = input.mutuals
+  const mutualColumns = 5
+  const mutualRows = Math.max(1, Math.ceil(mutuals.length / mutualColumns))
+  const mutualStartY = 92
+  const mutualEndY = mutualStartY + (mutualRows - 1) * 84
+  const mutualCenterY = (mutualStartY + mutualEndY) / 2
+  const groupY = mutualEndY + 150
+  const candidateColumns = 5
+  const candidateRows = Math.max(1, Math.ceil(Math.min(30, input.members.length) / candidateColumns))
+  const candidateStartY = groupY + 120
+  const height = Math.max(580, candidateStartY + (candidateRows - 1) * 78 + 90)
   const nodes:StrangerGraphNode[] = [
-    { id:input.self.id, label:input.self.displayName, kind:'self', x:115, y:290, imageUrl:input.self.imageUrl, detail:'你自己' },
-    { id:input.target.id, label:input.target.displayName, kind:'target', x:470, y:290, imageUrl:avatar(input.target), detail:input.target.statusDescription || '目标陌生人' },
+    { id:input.self.id, label:input.self.displayName, kind:'self', x:80, y:mutualCenterY, imageUrl:input.self.imageUrl, detail:'关系起点：你自己' },
+    { id:input.target.id, label:input.target.displayName, kind:'target', x:920, y:mutualCenterY, imageUrl:avatar(input.target), detail:input.target.statusDescription || '关系终点：目标用户' },
   ]
   const edges:StrangerGraphEdge[] = []
   if (input.target.isFriend) edges.push({ source:input.self.id, target:input.target.id, kind:'friend', label:'已是好友', evidence:'confirmed' })
 
-  const mutuals = input.mutuals.slice(0, 18)
   mutuals.forEach((item,index) => {
-    const point = ring(index, mutuals.length, 292, 290, 118, 225)
-    nodes.push({ id:item.id, label:item.displayName, kind:'mutual', ...point, imageUrl:avatar(item), detail:'共同好友' })
+    const point = { x:250 + (index % mutualColumns) * 125, y:mutualStartY + Math.floor(index / mutualColumns) * 84 }
+    nodes.push({ id:item.id, label:item.displayName, kind:'mutual', ...point, imageUrl:avatar(item), detail:`共同好友交集 · 你和 ${input.target.displayName} 都与其为好友` })
     edges.push({ source:input.self.id, target:item.id, kind:'friend', label:'你的好友', evidence:'confirmed' })
     edges.push({ source:item.id, target:input.target.id, kind:'mutual', label:'共同好友', evidence:'confirmed' })
   })
 
   const groups = input.groups.slice(0, 6)
   groups.forEach((group,index) => {
-    const point = ring(index, groups.length, 575, 290, 130, 230, -Math.PI/3)
+    const point = { x:150 + index * 140, y:groupY }
     nodes.push({ id:group.id, label:group.name, kind:'group', ...point, imageUrl:group.iconUrl, detail:`公开群组${group.memberCount ? ` · ${group.memberCount} 人` : ''}` })
     edges.push({ source:input.target.id, target:group.id, kind:'membership', label:'公开群组', evidence:'confirmed' })
   })
@@ -68,7 +73,7 @@ export function buildStrangerGraph(input:StrangerGraphInput):StrangerGraph {
   const candidates = [...memberByID.values()].filter(item => item.userId !== input.self.id && item.userId !== input.target.id && !input.mutuals.some(mutual => mutual.id === item.userId))
     .sort((a,b) => (memberGroups.get(b.userId)?.size || 0) - (memberGroups.get(a.userId)?.size || 0) || a.displayName.localeCompare(b.displayName)).slice(0,30)
   candidates.forEach((item,index) => {
-    const point = ring(index, candidates.length, 800, 290, 175, 245)
+    const point = { x:330 + (index % candidateColumns) * 125, y:candidateStartY + Math.floor(index / candidateColumns) * 78 }
     nodes.push({ id:item.userId, label:item.displayName, kind:'candidate', ...point, imageUrl:avatar(item), detail:`${memberGroups.get(item.userId)?.size || 1} 个共同公开群组` })
     for (const groupID of memberGroups.get(item.userId) || []) edges.push({ source:groupID, target:item.userId, kind:'candidate', label:'可见成员', evidence:'confirmed' })
   })
@@ -84,7 +89,7 @@ export function buildStrangerGraph(input:StrangerGraphInput):StrangerGraph {
     if (overlapsInInstance(eventByUser.get(mutual.id) || [], targetEvents)) edges.push({ source:input.target.id, target:mutual.id, kind:'co_presence', label:'共同好友同实例', evidence:'observed' })
   }
   const visible = new Set(nodes.map(item => item.id))
-  return { nodes, edges:edges.filter(edge => visible.has(edge.source) && visible.has(edge.target)), hiddenNodes:Math.max(0,input.mutuals.length-mutuals.length)+Math.max(0,memberByID.size-candidates.length) }
+  return { nodes, edges:edges.filter(edge => visible.has(edge.source) && visible.has(edge.target)), hiddenNodes:Math.max(0,memberByID.size-candidates.length), height, mutualCount:mutuals.length }
 }
 
 export function relationshipInsights(input:StrangerGraphInput):RelationshipInsight[] {
