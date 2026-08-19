@@ -30,6 +30,8 @@ describe('stranger relationship graph', () => {
     expect(graph.edges.filter(item=>item.kind==='friend')).toHaveLength(25)
     expect(graph.hiddenNodes).toBe(0)
     expect(graph.height).toBeGreaterThan(580)
+    expect(new Set(graph.nodes.filter(item=>item.kind==='mutual').map(item=>item.y)).size).toBe(25)
+    expect(graph.nodes.filter(item=>item.kind==='mutual').every(item=>item.x===500)).toBe(true)
   })
   it('keeps inferences evidence-labelled and includes coverage caveat', () => {
     const items = relationshipInsights(input)

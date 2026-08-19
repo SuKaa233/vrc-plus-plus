@@ -29,12 +29,14 @@ function overlapsInInstance(left:ActivityEvent[], right:ActivityEvent[]) {
 
 export function buildStrangerGraph(input:StrangerGraphInput):StrangerGraph {
   const mutuals = input.mutuals
-  const mutualColumns = 5
-  const mutualRows = Math.max(1, Math.ceil(mutuals.length / mutualColumns))
-  const mutualStartY = 92
-  const mutualEndY = mutualStartY + (mutualRows - 1) * 84
+  // A single ordered intersection lane is deliberately used here. Packing several
+  // people onto one row saves height, but makes the two confirmed friend edges run
+  // through unrelated nodes and visually suggests relationships that do not exist.
+  const mutualStartY = 108
+  const mutualSpacing = mutuals.length > 80 ? 58 : 76
+  const mutualEndY = mutualStartY + (Math.max(1, mutuals.length) - 1) * mutualSpacing
   const mutualCenterY = (mutualStartY + mutualEndY) / 2
-  const groupY = mutualEndY + 150
+  const groupY = mutualEndY + 170
   const candidateColumns = 5
   const candidateRows = Math.max(1, Math.ceil(Math.min(30, input.members.length) / candidateColumns))
   const candidateStartY = groupY + 120
@@ -47,7 +49,7 @@ export function buildStrangerGraph(input:StrangerGraphInput):StrangerGraph {
   if (input.target.isFriend) edges.push({ source:input.self.id, target:input.target.id, kind:'friend', label:'已是好友', evidence:'confirmed' })
 
   mutuals.forEach((item,index) => {
-    const point = { x:250 + (index % mutualColumns) * 125, y:mutualStartY + Math.floor(index / mutualColumns) * 84 }
+    const point = { x:500, y:mutualStartY + index * mutualSpacing }
     nodes.push({ id:item.id, label:item.displayName, kind:'mutual', ...point, imageUrl:avatar(item), detail:`共同好友交集 · 你和 ${input.target.displayName} 都与其为好友` })
     edges.push({ source:input.self.id, target:item.id, kind:'friend', label:'你的好友', evidence:'confirmed' })
     edges.push({ source:item.id, target:input.target.id, kind:'mutual', label:'共同好友', evidence:'confirmed' })

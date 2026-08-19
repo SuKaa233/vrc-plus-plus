@@ -21,4 +21,5 @@ describe('local insights',()=>{
   it('returns a coverage answer without guessing',()=>{const result=queryLocalSocial('数据覆盖怎么样',friends,worlds,events,null);expect(result.intent).toBe('coverage');expect(result.cards[0].coverageDays).toBe(2)})
   it('returns help for unsupported questions',()=>{expect(queryLocalSocial('随便问问',friends,worlds,events,null).intent).toBe('help')})
   it('answers tonight recommendations without requiring a public friend location',()=>{const result=queryLocalSocial('今晚去哪',[{...friends[2],online:false}],worlds,events,null);expect(result.intent).toBe('tonight');expect(result.cards.length).toBeGreaterThan(0)})
+  it('supports distinct compass strategies without inventing friend locations',()=>{const explore=buildTonightCards(friends,worlds,['wrld_y'],events,'explore');expect(explore[0].targetWorldId).toBe('wrld_y');expect(explore.filter(item=>!item.location).every(item=>item.reasons.some(reason=>reason.includes('不代表有好友')))).toBe(true)})
 })

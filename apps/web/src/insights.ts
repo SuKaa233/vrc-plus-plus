@@ -17,6 +17,7 @@ export interface InsightCard {
 }
 
 export interface LocalQueryResult { intent: string; label: string; cards: InsightCard[]; hint?: string }
+export type CompassMode = 'friends' | 'reunion' | 'explore'
 
 function coverageDays(events: ActivityEvent[]) {
   return new Set(events.map((event) => event.observedAt.slice(0, 10)).filter(Boolean)).size
@@ -27,7 +28,7 @@ function timeBounds(hours = 1) {
   return { generatedAt: generatedAt.toISOString(), expiresAt: new Date(generatedAt.getTime() + hours * 3600_000).toISOString() }
 }
 
-export function buildTonightCards(friends: Friend[], worlds: World[], favoriteIds: string[], events: ActivityEvent[]): InsightCard[] {
+export function buildTonightCards(friends: Friend[], worlds: World[], favoriteIds: string[], events: ActivityEvent[], mode:CompassMode='friends'): InsightCard[] {
   const groups = new Map<string, Friend[]>()
   for (const friend of friends) {
     const location = friend.location ?? ''
@@ -37,20 +38,26 @@ export function buildTonightCards(friends: Friend[], worlds: World[], favoriteId
   const worldByID = new Map(worlds.map((item) => [item.id, item]))
   const favorites = new Set(favoriteIds)
   const coverage = coverageDays(events)
+  const lastSeenByUser = new Map<string,number>()
+  for (const event of events) if (event.userId) lastSeenByUser.set(event.userId,Math.max(lastSeenByUser.get(event.userId)||0,new Date(event.observedAt).getTime()||0))
   const liveBounds = timeBounds(0.5)
   const live = [...groups.entries()].map(([location, people]) => {
     const worldID = location.split(':')[0]
     const world = worldByID.get(worldID)
     const favorite = favorites.has(worldID)
-    const score = people.length * 30 + (favorite ? 14 : 0) + (world ? 6 : 0)
+    const reunionBonus = mode==='reunion' ? Math.min(35,Math.max(...people.map(person=>Math.floor((Date.now()-(lastSeenByUser.get(person.id)||Date.now()))/86_400_000)),0)) : 0
+    const exploreBonus = mode==='explore' ? Math.min(24,Math.round(Math.log10(Math.max(1,world?.visits||world?.favorites||1))*5)) : 0
+    const livePriority = mode==='friends'?50:mode==='reunion'?35:0
+    const score = livePriority + people.length * (mode==='friends'?30:20) + (favorite ? 14 : 0) + (world ? 6 : 0) + reunionBonus + exploreBonus
     const reasons = [`${people.length} 位好友位于同一可加入实例`, `包括 ${people.slice(0, 3).map((item) => item.displayName).join('、')}`]
     if (favorite) reasons.push('这个世界在你的 VRChat 收藏中')
+    if (reunionBonus) reasons.push(`包含较久未见的在线好友，重逢优先级 +${reunionBonus}`)
     if (!world) reasons.push('世界资料尚未缓存，进入详情后可补充')
     return { id: `route:${location}`, kind: 'route' as const, title: world?.name || `${people.length} 位好友所在世界`, summary: people.length > 1 ? '实时可加入：熟人正在同一实例' : `实时可加入：可以去找 ${people[0].displayName}`, score, reasons, coverageDays: coverage, ...liveBounds, targetWorldId: worldID, location }
   }).sort((left, right) => right.score - left.score || left.title.localeCompare(right.title))
 
   const cards:InsightCard[] = live.slice(0,3)
-  const usedWorlds = new Set(cards.map(item=>item.targetWorldId))
+  const usedWorlds = new Set(live.map(item=>item.targetWorldId))
   const history = new Map<string,{count:number;last:string}>()
   for (const event of events) {
     const worldID = event.worldId || (event.location?.startsWith('wrld_') ? event.location.split(':')[0] : '')
@@ -65,7 +72,7 @@ export function buildTonightCards(friends: Friend[], worlds: World[], favoriteId
     const seen = history.get(world.id)
     const favorite = favorites.has(world.id)
     const popularity = Math.min(25,Math.round(Math.log10(Math.max(1,world.visits||world.favorites||1))*5))
-    const score = (favorite?38:0) + Math.min(36,(seen?.count||0)*4) + popularity + Math.min(15,world.occupants||0)
+    const score = (favorite?(mode==='explore'?48:38):0) + Math.min(36,(seen?.count||0)*(mode==='explore'?5:4)) + popularity + Math.min(15,world.occupants||0)
     const source = favorite&&seen?'收藏 + 本机历史':favorite?'收藏世界':seen?'本机历史':'热门公开世界'
     const reasons:string[] = []
     if (favorite) reasons.push('已在你的 VRChat 收藏中')
@@ -75,7 +82,8 @@ export function buildTonightCards(friends: Friend[], worlds: World[], favoriteId
     reasons.push('这是世界建议，不代表有好友正在其中')
     return { id:`recommend:${world.id}`,kind:'route' as const,title:world.name,summary:`${source}推荐，可先查看世界与公开实例`,score,reasons,coverageDays:coverage,...fallbackBounds,targetWorldId:world.id }
   }).sort((a,b)=>b.score-a.score||a.title.localeCompare(b.title))
-  for (const card of fallback) { if (cards.length>=3) break; cards.push(card) }
+  if(mode==='explore') return [...live,...fallback].sort((a,b)=>b.score-a.score||a.title.localeCompare(b.title)).slice(0,6)
+  for (const card of fallback) { if (cards.length>=6) break; cards.push(card) }
   return cards
 }
 
