@@ -1807,22 +1807,25 @@ onBeforeUnmount(() => {
             : l(`发现 VRC++ ${updateStatus.latest}`, "VRC++ update available")
         }}</strong
         ><span>{{
-          updateStatus.releaseNotes?.[0] ||
+          updateStatus.releaseNotes?.slice(0, 2).join(" · ") ||
           l("包含功能改进与问题修复", "Improvements and fixes included")
-        }}</span>
+        }}</span><small>当前 {{ updateStatus.current }} → 最新 {{ updateStatus.latest }} · 每 10 分钟自动检查</small>
       </div>
+      <a
+        v-if="updateStatus.state === 'available'"
+        :href="updateStatus.downloadUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+      >前往 GitHub 下载</a>
       <button
+        v-else
         :disabled="updateLoading"
-        @click="
-          runUpdateAction(updateStatus.state === 'ready' ? 'apply' : 'download')
-        "
+        @click="runUpdateAction('apply')"
       >
         {{
           updateLoading
             ? l("请稍候", "Please wait")
-            : updateStatus.state === "ready"
-              ? l("安装并重启", "Install & restart")
-              : l("下载更新", "Download")
+            : l("安装并重启", "Install & restart")
         }}
       </button>
     </aside>
@@ -2612,22 +2615,24 @@ onBeforeUnmount(() => {
           ><span
             ><RefreshCw :size="16" /><b>自动更新</b
             >{{ updateStatus.message || updateStatus.state
-            }}<button
+            }}<a
+              v-if="updateStatus.state === 'available'"
+              :href="updateStatus.downloadUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+            >GitHub 下载</a><button
+              v-else
               :disabled="updateLoading || updateStatus.state === 'unconfigured'"
               @click="
                 runUpdateAction(
-                  updateStatus.state === 'available'
-                    ? 'download'
-                    : updateStatus.state === 'ready'
+                  updateStatus.state === 'ready'
                       ? 'apply'
                       : 'check',
                 )
               "
             >
               {{
-                updateStatus.state === "available"
-                  ? "下载"
-                  : updateStatus.state === "ready"
+                updateStatus.state === "ready"
                     ? "安装并重启"
                     : "检查"
               }}

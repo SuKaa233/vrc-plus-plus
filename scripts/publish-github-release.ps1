@@ -59,9 +59,18 @@ if ($version.Contains('-')) {
         & $gh release create update-beta $manifest --repo $Repository --title 'VRC++ Beta Update Channel' --notes 'This rolling release stores the Beta update manifest.' --prerelease
     }
     if ($LASTEXITCODE -ne 0) { throw 'Could not update the Beta channel manifest.' }
+    $channelManifestUrl = "https://github.com/$Repository/releases/download/update-beta/update-manifest.json"
 } else {
     & $gh release upload $tag $manifest --repo $Repository --clobber
     if ($LASTEXITCODE -ne 0) { throw 'Could not upload the stable update manifest.' }
+    $channelManifestUrl = "https://github.com/$Repository/releases/latest/download/update-manifest.json"
+}
+
+$cacheBuster = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$publishedManifest = Invoke-RestMethod -Uri "$channelManifestUrl`?ts=$cacheBuster" -Headers @{ 'Cache-Control' = 'no-cache' }
+if ($publishedManifest.version -ne $version) {
+    throw "Update channel verification failed: expected $version, got $($publishedManifest.version)."
 }
 
 Write-Host "Published VRC++ $version to https://github.com/$Repository/releases/tag/$tag"
+Write-Host "Verified update channel: $channelManifestUrl"

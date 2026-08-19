@@ -282,6 +282,7 @@ export interface UpdateStatus {
   state: 'unconfigured' | 'idle' | 'current' | 'available' | 'ready' | 'error' | 'disabled'
   current: string
   latest?: string
+  checkedAt?: string
   publishedAt?: string
   source?: string
   downloadUrl?: string

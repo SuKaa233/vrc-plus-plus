@@ -33,9 +33,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .update-notice > svg { color: var(--accent); }
 .update-notice div { min-width: 0; display: grid; gap: 3px; }
-.update-notice strong, .update-notice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.update-notice span { color: var(--muted); font-size: 11px; }
-.update-notice button { padding: 8px 10px; border: 0; border-radius: 7px; color: #fff; background: var(--accent); cursor: pointer; white-space: nowrap; }
+.update-notice strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.update-notice span { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.update-notice small { color: var(--muted); font-size: 10px; }
+.update-notice button, .update-notice > a { padding: 8px 10px; border: 0; border-radius: 7px; color: #fff; background: var(--accent); cursor: pointer; white-space: nowrap; text-decoration: none; }
 .update-notice button:disabled { opacity: .55; cursor: wait; }
 
 /* Shared */
@@ -280,7 +281,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .runtime-strip > span { min-width: 0; min-height: 48px; display: flex; align-items: center; gap: 7px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface-muted); font-size: 10px; }
 .runtime-strip svg { flex: 0 0 auto; color: var(--accent); }
 .runtime-strip b { color: var(--ink); white-space: nowrap; }
-.runtime-strip button { margin-left: auto; padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--ink); background: var(--surface); cursor: pointer; white-space: nowrap; }
+.runtime-strip button, .runtime-strip a { margin-left: auto; padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--ink); background: var(--surface); cursor: pointer; white-space: nowrap; text-decoration: none; }
 
 @media (max-width: 900px) {
   .landing-grid { grid-template-columns: 1fr; }

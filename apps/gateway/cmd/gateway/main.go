@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/gamelog"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/localapi"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/media"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/pipeline"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/presence"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/security"
@@ -37,7 +39,7 @@ const (
 )
 
 var (
-	version           = "0.9.0-beta.18"
+	version           = "0.9.0-beta.19"
 	defaultUpdateURLs = ""
 )
 
@@ -152,7 +154,18 @@ func run() error {
 	logger.Info("VRC++ gateway started", "url", localURL, "data", *dataDirectory)
 	appContext, cancelApp := context.WithCancel(context.Background())
 	defer cancelApp()
-	updateService.StartBackground(appContext, 12*time.Second, 6*time.Hour)
+	updateService.StartBackground(appContext, 12*time.Second, 10*time.Minute, func(status model.UpdateStatus) {
+		if !*shouldShowTray {
+			return
+		}
+		message := fmt.Sprintf("VRC++ %s 已发布，请打开应用前往 GitHub 下载更新。", status.Latest)
+		if len(status.ReleaseNotes) > 0 && strings.TrimSpace(status.ReleaseNotes[0]) != "" {
+			message = status.ReleaseNotes[0]
+		}
+		if err := tray.Notify("VRC++ 发现新版本 "+status.Latest, message); err != nil {
+			logger.Warn("could not show update notification", "error", err)
+		}
+	})
 	windowManager := desktop.New()
 	var desktopMode atomic.Bool
 	desktopMode.Store(*shouldUseDesktop && !*shouldOpenBrowser)

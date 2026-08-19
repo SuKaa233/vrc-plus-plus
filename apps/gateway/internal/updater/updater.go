@@ -116,15 +116,25 @@ func (s *Service) Status() model.UpdateStatus {
 	return s.status
 }
 
-func (s *Service) StartBackground(ctx context.Context, initialDelay, interval time.Duration) {
+func (s *Service) StartBackground(ctx context.Context, initialDelay, interval time.Duration, onAvailable func(model.UpdateStatus)) {
 	go func() {
+		lastNotifiedVersion := ""
+		check := func() {
+			status := s.Check(ctx)
+			if status.State == "available" && status.Latest != "" && status.Latest != lastNotifiedVersion {
+				lastNotifiedVersion = status.Latest
+				if onAvailable != nil {
+					onAvailable(status)
+				}
+			}
+		}
 		timer := time.NewTimer(initialDelay)
 		defer timer.Stop()
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			s.Check(ctx)
+			check()
 		}
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -133,7 +143,7 @@ func (s *Service) StartBackground(ctx context.Context, initialDelay, interval ti
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.Check(ctx)
+				check()
 			}
 		}
 	}()
@@ -177,14 +187,18 @@ func (s *Service) Check(ctx context.Context) model.UpdateStatus {
 		result := model.UpdateStatus{
 			State: state, Current: s.current, Latest: value.Version, PublishedAt: value.PublishedAt,
 			Source: source, DownloadURL: download, Size: value.WindowsX64.Size,
-			ReleaseNotes: value.ReleaseNotes, Message: message,
+			ReleaseNotes: value.ReleaseNotes, Message: message, CheckedAt: time.Now().UTC(),
 		}
 		s.mu.Lock()
+		if s.status.State == "ready" && s.status.Latest == result.Latest {
+			result = s.status
+			result.CheckedAt = time.Now().UTC()
+		}
 		s.status, s.asset = result, value.WindowsX64
 		s.mu.Unlock()
 		return result
 	}
-	result := model.UpdateStatus{State: "error", Current: s.current, Message: "暂时无法连接更新服务器"}
+	result := model.UpdateStatus{State: "error", Current: s.current, Message: "暂时无法连接更新服务器", CheckedAt: time.Now().UTC()}
 	if s.logger != nil && len(failures) > 0 {
 		s.logger.Warn("all update sources failed", "failures", strings.Join(failures, "; "))
 	}

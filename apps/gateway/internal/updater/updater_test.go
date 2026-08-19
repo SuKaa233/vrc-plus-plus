@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
 )
 
 func TestCheckFallsBackToSecondSource(t *testing.T) {
@@ -67,5 +69,31 @@ func TestNewerUsesSemanticVersionOrdering(t *testing.T) {
 		if got := newer(test.candidate, test.current); got != test.want {
 			t.Errorf("newer(%q, %q) = %v, want %v", test.candidate, test.current, got, test.want)
 		}
+	}
+}
+
+func TestBackgroundChecksNotifyEachVersionOnce(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(writer, `{"version":"0.2.0","publishedAt":"2026-08-19T00:00:00Z","releaseNotes":["new"],"windowsX64":{"file":"VRC++-Setup-0.2.0.exe","size":3,"mirrors":[]}}`)
+	}))
+	defer server.Close()
+	t.Setenv("VRC_HARBOR_UPDATE_URLS", server.URL+"/update-manifest.json")
+	service := New("0.1.0", t.TempDir(), &http.Client{Timeout: time.Second}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	notified := make(chan string, 3)
+	service.StartBackground(ctx, 5*time.Millisecond, 10*time.Millisecond, func(status model.UpdateStatus) { notified <- status.Latest })
+	select {
+	case version := <-notified:
+		if version != "0.2.0" {
+			t.Fatalf("notified version = %q", version)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("background update notification was not delivered")
+	}
+	select {
+	case version := <-notified:
+		t.Fatalf("same version was notified twice: %s", version)
+	case <-time.After(60 * time.Millisecond):
 	}
 }

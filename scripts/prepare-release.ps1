@@ -19,7 +19,11 @@ if ($PrimaryDownloadBaseUrl) {
 }
 $mirrors.Add("https://github.com/$Repository/releases/download/v$version/$installerName")
 if ($ReleaseNotes.Count -eq 0) {
-    $ReleaseNotes = @("Update VRC++ to $version")
+    $releaseNotesFile = Join-Path $workspace "docs\release-notes-$version.md"
+    if (Test-Path -LiteralPath $releaseNotesFile) {
+        $ReleaseNotes = @(Get-Content -LiteralPath $releaseNotesFile | Where-Object { $_.TrimStart().StartsWith('- ') } | ForEach-Object { $_.Trim().Substring(2) } | Select-Object -First 4)
+    }
+    if ($ReleaseNotes.Count -eq 0) { $ReleaseNotes = @("Update VRC++ to $version") }
 }
 
 $manifest = [ordered]@{

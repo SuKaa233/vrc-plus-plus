@@ -288,6 +288,7 @@ type UpdateStatus struct {
 	State        string    `json:"state"`
 	Current      string    `json:"current"`
 	Latest       string    `json:"latest,omitempty"`
+	CheckedAt    time.Time `json:"checkedAt,omitempty"`
 	PublishedAt  time.Time `json:"publishedAt,omitempty"`
 	Source       string    `json:"source,omitempty"`
 	DownloadURL  string    `json:"downloadUrl,omitempty"`
