@@ -32,15 +32,15 @@ export function buildStrangerGraph(input:StrangerGraphInput):StrangerGraph {
   // A single ordered intersection lane is deliberately used here. Packing several
   // people onto one row saves height, but makes the two confirmed friend edges run
   // through unrelated nodes and visually suggests relationships that do not exist.
-  const mutualStartY = 108
-  const mutualSpacing = mutuals.length > 80 ? 58 : 76
+  const mutualStartY = 96
+  const mutualSpacing = mutuals.length > 80 ? 44 : mutuals.length >= 40 ? 48 : mutuals.length >= 20 ? 56 : 68
   const mutualEndY = mutualStartY + (Math.max(1, mutuals.length) - 1) * mutualSpacing
   const mutualCenterY = (mutualStartY + mutualEndY) / 2
-  const groupY = mutualEndY + 170
+  const groupY = mutualEndY + 128
   const candidateColumns = 5
   const candidateRows = Math.max(1, Math.ceil(Math.min(30, input.members.length) / candidateColumns))
-  const candidateStartY = groupY + 120
-  const height = Math.max(580, candidateStartY + (candidateRows - 1) * 78 + 90)
+  const candidateStartY = groupY + 96
+  const height = Math.max(540, candidateStartY + (candidateRows - 1) * 66 + 72)
   const nodes:StrangerGraphNode[] = [
     { id:input.self.id, label:input.self.displayName, kind:'self', x:80, y:mutualCenterY, imageUrl:input.self.imageUrl, detail:'关系起点：你自己' },
     { id:input.target.id, label:input.target.displayName, kind:'target', x:920, y:mutualCenterY, imageUrl:avatar(input.target), detail:input.target.statusDescription || '关系终点：目标用户' },

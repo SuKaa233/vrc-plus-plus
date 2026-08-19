@@ -33,6 +33,14 @@ describe('stranger relationship graph', () => {
     expect(new Set(graph.nodes.filter(item=>item.kind==='mutual').map(item=>item.y)).size).toBe(25)
     expect(graph.nodes.filter(item=>item.kind==='mutual').every(item=>item.x===500)).toBe(true)
   })
+  it('uses a compact single lane for large mutual-friend intersections', () => {
+    const mutuals = Array.from({length:46},(_,index)=>({id:`usr_mutual_${index}`,displayName:`Mutual ${index}`}))
+    const graph = buildStrangerGraph({...input,mutuals})
+    const mutualNodes = graph.nodes.filter(item=>item.kind==='mutual')
+    expect(mutualNodes).toHaveLength(46)
+    expect(mutualNodes[1].y-mutualNodes[0].y).toBe(48)
+    expect(graph.height).toBeLessThan(2700)
+  })
   it('keeps inferences evidence-labelled and includes coverage caveat', () => {
     const items = relationshipInsights(input)
     expect(items.some(item=>item.id==='mutual-route' && item.confidence==='中')).toBe(true)
