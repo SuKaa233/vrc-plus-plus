@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -51,7 +50,7 @@ func (s *Service) Detect(ctx context.Context, refresh bool) Status {
 	command := `Get-CimInstance Win32_PnPEntity | Where-Object { $_.Status -eq 'OK' -and ($_.Name -match '(?i)Oculus|Meta Quest|Quest Link|Rift|Valve.*(VR|Index)|Index HMD|HTC.*VIVE|VIVE|PICO|Windows Mixed Reality|Mixed Reality|Varjo|Bigscreen Beyond|PS VR') } | Select-Object Name,Manufacturer,PNPDeviceID,Status | ConvertTo-Json -Compress`
 	checkCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(checkCtx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command).Output()
+	output, err := hiddenCommandContext(checkCtx, "powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", command).Output()
 	if err == nil && len(output) > 0 {
 		status.Devices = parseDevices(output)
 	}
@@ -165,7 +164,7 @@ func detectRuntimes() []Runtime {
 
 func runningProcesses() map[string]bool {
 	result := map[string]bool{}
-	output, err := exec.Command("tasklist.exe", "/FO", "CSV", "/NH").Output()
+	output, err := hiddenCommand("tasklist.exe", "/FO", "CSV", "/NH").Output()
 	if err != nil {
 		return result
 	}

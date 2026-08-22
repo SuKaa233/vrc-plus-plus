@@ -377,6 +377,38 @@ function hash(value: string) {
   return result >>> 0
 }
 
+export function seedFriendNetworkLayout(nodes: FriendNetworkNode[], edges: FriendNetworkEdge[], width = 1000, height = 620) {
+  if (!nodes.length) return [] as PositionedNetworkNode[]
+  const degrees = new Map(nodes.map((node) => [node.id, 0]))
+  for (const edge of edges) {
+    if (edge.source === edge.target || !degrees.has(edge.source) || !degrees.has(edge.target)) continue
+    degrees.set(edge.source, (degrees.get(edge.source) ?? 0) + 1)
+    degrees.set(edge.target, (degrees.get(edge.target) ?? 0) + 1)
+  }
+  const padding = 56
+  const centerX = width / 2
+  const centerY = height / 2
+  const orbitX = (width - padding * 2) * .46
+  const orbitY = (height - padding * 2) * .46
+  return nodes.map((node, index) => {
+    const angle = index * 2.399963229728653 + (hash(node.id) % 1000) / 1800
+    const radial = Math.sqrt((index + .65) / nodes.length)
+    const degree = degrees.get(node.id) ?? 0
+    return {
+      ...node,
+      x: centerX + Math.cos(angle) * orbitX * radial,
+      y: centerY + Math.sin(angle) * orbitY * radial,
+      radius: Math.min(19, 8 + Math.sqrt(degree) * 2.6),
+      degree,
+      component: 0,
+    }
+  })
+}
+
+export function shouldUseNetworkLayoutWorker(nodeCount: number) {
+  return nodeCount > 220
+}
+
 export function layoutFriendNetwork(nodes: FriendNetworkNode[], edges: FriendNetworkEdge[], width = 1000, height = 620) {
   if (!nodes.length) return [] as PositionedNetworkNode[]
   const ids = new Set(nodes.map((node) => node.id))

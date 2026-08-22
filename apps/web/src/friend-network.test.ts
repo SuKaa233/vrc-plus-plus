@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, expandNetworkAvatarBudget, findShortestNetworkPath, layoutFriendNetwork, rankBridgeNodes, resolveNodeCollisions, selectCommunityTheme, selectNetworkRenderEdges, summarizeNetworkDelta, toggleElementFullscreen, zoomAroundPoint } from './friend-network'
+import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, expandNetworkAvatarBudget, findShortestNetworkPath, layoutFriendNetwork, rankBridgeNodes, resolveNodeCollisions, seedFriendNetworkLayout, selectCommunityTheme, selectNetworkRenderEdges, shouldUseNetworkLayoutWorker, summarizeNetworkDelta, toggleElementFullscreen, zoomAroundPoint } from './friend-network'
 
 describe('layoutFriendNetwork', () => {
   it('lays out nodes deterministically and calculates graph metadata', () => {
@@ -20,6 +20,21 @@ describe('layoutFriendNetwork', () => {
     expect(positions).toHaveLength(500);expect(positions.every(node=>Number.isFinite(node.x)&&Number.isFinite(node.y))).toBe(true)
     expect(selectNetworkRenderEdges(edges,1400).length).toBeLessThanOrEqual(1400)
     expect(elapsed).toBeLessThan(2500)
+  })
+
+  it('provides an immediate non-empty fallback before the large-graph worker responds', () => {
+    const nodes=Array.from({length:500},(_,index)=>({id:`usr_${index}`,displayName:`Friend ${index}`,online:false,scanned:true,optedOut:false}))
+    const edges=Array.from({length:2494},(_,index)=>({source:`usr_${index%500}`,target:`usr_${(index*17+31)%500}`})).filter(edge=>edge.source!==edge.target)
+    const started=performance.now();const positions=seedFriendNetworkLayout(nodes,edges,1800,1100)
+    expect(positions).toHaveLength(500)
+    expect(positions.every(node=>Number.isFinite(node.x)&&Number.isFinite(node.y)&&node.degree>0)).toBe(true)
+    expect(performance.now()-started).toBeLessThan(100)
+  })
+
+  it('does not send the reported 166-node 2494-edge graph through the worker-only path', () => {
+    expect(shouldUseNetworkLayoutWorker(166)).toBe(false)
+    expect(shouldUseNetworkLayoutWorker(220)).toBe(false)
+    expect(shouldUseNetworkLayoutWorker(500)).toBe(true)
   })
 
   it('keeps the pointer anchor stable while zooming', () => {

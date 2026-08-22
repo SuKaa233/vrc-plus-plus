@@ -21,7 +21,7 @@ import {
   X,
 } from '@lucide/vue'
 import type { FriendAnnotation, FriendNetwork, FriendNetworkNode } from './api'
-import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, expandNetworkAvatarBudget, findShortestNetworkPath, layoutFriendNetwork, networkEdgeKey, rankBridgeNodes, selectCommunityTheme, selectNetworkRenderEdges, toggleElementFullscreen, zoomAroundPoint, type FriendNetworkSnapshot, type PositionedNetworkNode } from './friend-network'
+import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, expandNetworkAvatarBudget, findShortestNetworkPath, layoutFriendNetwork, networkEdgeKey, rankBridgeNodes, seedFriendNetworkLayout, selectCommunityTheme, selectNetworkRenderEdges, shouldUseNetworkLayoutWorker, toggleElementFullscreen, zoomAroundPoint, type FriendNetworkSnapshot, type PositionedNetworkNode } from './friend-network'
 import { preferredFriendAvatar } from './media'
 
 const props = defineProps<{
@@ -105,6 +105,7 @@ let canvasFrame: number | undefined
 let nodeClickTimer: number | undefined
 let layoutWorker: Worker | undefined
 let layoutRequestID = 0
+let layoutFallbackTimer: number | undefined
 let fpsFrame: number | undefined
 let fpsStarted = 0
 let fpsFrames = 0
@@ -210,9 +211,19 @@ const graphSize = computed(() => {
 const automaticPositions = ref<PositionedNetworkNode[]>([])
 function requestAutomaticLayout() {
   const id=++layoutRequestID,nodes=visibleNodes.value,edges=structuralEdges.value,size=graphSize.value
-  if(!largeGraph.value){automaticPositions.value=layoutFriendNetwork(nodes,edges,size.width,size.height);return}
-  if(!layoutWorker){layoutWorker=new Worker(new URL('./friend-network.worker.ts',import.meta.url),{type:'module'});layoutWorker.onmessage=(event:MessageEvent<{id:number;positions:PositionedNetworkNode[]}>)=>{if(event.data.id===layoutRequestID)automaticPositions.value=event.data.positions};layoutWorker.onerror=()=>{layoutWorker?.terminate();layoutWorker=undefined;automaticPositions.value=layoutFriendNetwork(visibleNodes.value,structuralEdges.value,graphSize.value.width,graphSize.value.height)}}
-  layoutWorker.postMessage({id,nodes,edges,width:size.width,height:size.height})
+  window.clearTimeout(layoutFallbackTimer)
+  if(!shouldUseNetworkLayoutWorker(nodes.length)){automaticPositions.value=layoutFriendNetwork(nodes,edges,size.width,size.height);return}
+  // Never leave the graph blank while WebView2 starts (or blocks) the module Worker.
+  // This O(n+e) seed renders immediately; the Worker replaces it with the refined layout.
+  automaticPositions.value=seedFriendNetworkLayout(nodes,edges,size.width,size.height)
+  try {
+    if(!layoutWorker){layoutWorker=new Worker(new URL('./friend-network.worker.ts',import.meta.url),{type:'module'});layoutWorker.onmessage=(event:MessageEvent<{id:number;positions:PositionedNetworkNode[]}>)=>{if(event.data.id===layoutRequestID&&event.data.positions.length){window.clearTimeout(layoutFallbackTimer);automaticPositions.value=event.data.positions}};layoutWorker.onerror=()=>{layoutWorker?.terminate();layoutWorker=undefined}}
+    layoutWorker.postMessage({id,nodes,edges,width:size.width,height:size.height})
+  } catch {
+    layoutWorker?.terminate()
+    layoutWorker=undefined
+  }
+  layoutFallbackTimer=window.setTimeout(()=>{if(id===layoutRequestID&&automaticPositions.value.length===0)automaticPositions.value=seedFriendNetworkLayout(nodes,edges,size.width,size.height)},2500)
 }
 watch([visibleNodes,structuralEdges,graphSize],requestAutomaticLayout,{immediate:true})
 
@@ -479,6 +490,7 @@ onBeforeUnmount(() => {
   if (canvasFrame !== undefined) window.cancelAnimationFrame(canvasFrame)
   window.clearTimeout(nodeClickTimer)
   layoutWorker?.terminate()
+  window.clearTimeout(layoutFallbackTimer)
   if(fpsFrame!==undefined)window.cancelAnimationFrame(fpsFrame)
   longTaskObserver?.disconnect()
   edgeElements.clear()
