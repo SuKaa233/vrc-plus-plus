@@ -63,7 +63,7 @@ function shortTime(value: string) { const date = new Date(value); return Number.
       </div>
       <article class="today-panel recent-panel"><header><div><Clock3 :size="17" /><strong>刚刚发生</strong></div><button @click="emit('selectView','activity')">历史 <ChevronRight :size="14" /></button></header><div v-for="event in recent" :key="event.id" class="event-row"><i></i><span><strong>{{ event.summary }}</strong><small>{{ shortTime(event.observedAt) }} · {{ event.type.startsWith('game.') ? '游戏日志' : '实时观察' }}</small></span></div><p v-if="!recent.length" class="today-empty">本机还没有活动记录。</p></article>
     </div>
-    <div class="today-foot"><Radio :size="14" />数据来自当前好友快照、Pipeline 与本机游戏日志；缺失时段不会被推断。</div>
+    <div class="today-foot"><Radio :size="14" />信息来自当前好友状态、实时动态与游戏记录；缺失时段不会被推断。</div>
   </section>
 </template>
 

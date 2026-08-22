@@ -22,8 +22,10 @@ import (
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/events"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/gamelog"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/guardian"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/hardware"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/media"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/photos"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/pipeline"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/presence"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/storage"
@@ -42,6 +44,8 @@ type Config struct {
 	Updater      *updater.Service
 	Presence     *presence.Service
 	Guardian     *guardian.Service
+	Photos       *photos.Service
+	Hardware     *hardware.Service
 	Shutdown     chan struct{}
 }
 
@@ -58,6 +62,8 @@ type Server struct {
 	updater     *updater.Service
 	presence    *presence.Service
 	guardian    *guardian.Service
+	photos      *photos.Service
+	hardware    *hardware.Service
 	shutdown    chan struct{}
 	logger      *slog.Logger
 	static      http.Handler
@@ -81,6 +87,8 @@ func New(config Config, vrchatClient *vrchat.Client, diagnosticService *diagnost
 		updater:     config.Updater,
 		presence:    config.Presence,
 		guardian:    config.Guardian,
+		photos:      config.Photos,
+		hardware:    config.Hardware,
 		shutdown:    config.Shutdown,
 		logger:      logger,
 		static:      http.FileServer(http.FS(config.StaticFS)),
@@ -124,6 +132,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /local/v1/guardian", s.getGuardianStatus)
 	mux.HandleFunc("POST /local/v1/guardian/resume", s.resumeGuardianSession)
 	mux.HandleFunc("POST /local/v1/guardian/dismiss", s.dismissGuardianRecovery)
+	mux.HandleFunc("POST /local/v1/guardian/launch", s.launchGuardianLocation)
+	mux.HandleFunc("POST /local/v1/guardian/slot-watch", s.startGuardianSlotWatch)
+	mux.HandleFunc("DELETE /local/v1/guardian/slot-watch", s.stopGuardianSlotWatch)
+	mux.HandleFunc("POST /local/v1/guardian/migration-watch", s.startGuardianMigrationWatch)
+	mux.HandleFunc("DELETE /local/v1/guardian/migration-watch", s.stopGuardianMigrationWatch)
+	mux.HandleFunc("GET /local/v1/photos", s.listPhotos)
+	mux.HandleFunc("GET /local/v1/photos/{photoID}", s.getPhotoDetail)
+	mux.HandleFunc("GET /local/v1/photos/{photoID}/content", s.servePhoto)
+	mux.HandleFunc("GET /local/v1/photos/{photoID}/thumbnail", s.servePhotoThumbnail)
+	mux.HandleFunc("POST /local/v1/photos/{photoID}/rotate", s.rotatePhoto)
+	mux.HandleFunc("POST /local/v1/photos/{photoID}/rename", s.renamePhoto)
+	mux.HandleFunc("POST /local/v1/photos/{photoID}/reveal", s.revealPhoto)
+	mux.HandleFunc("DELETE /local/v1/photos/{photoID}", s.deletePhoto)
+	mux.HandleFunc("GET /local/v1/hardware/vr", s.getVRHardware)
 	mux.HandleFunc("GET /local/v1/update", s.getUpdateStatus)
 	mux.HandleFunc("POST /local/v1/update/check", s.checkUpdate)
 	mux.HandleFunc("POST /local/v1/update/download", s.downloadUpdate)

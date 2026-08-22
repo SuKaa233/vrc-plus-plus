@@ -320,7 +320,7 @@ export function buildReadinessChecks(
   return [
     { id: 'database', label: '本机数据库', state: diagnostics?.database.ready ? 'ok' : diagnostics ? 'error' : 'unknown', detail: diagnostics?.database.ready ? '可读取历史、计划与缓存索引' : '尚未确认本机数据库状态' },
     { id: 'rest', label: 'VRChat REST', state: rest?.state === 'ok' ? 'ok' : rest?.state === 'error' ? 'error' : rest ? 'warn' : 'unknown', detail: rest?.detail || '等待线路诊断结果' },
-    { id: 'pipeline', label: '实时事件', state: realtime.state === 'connected' ? 'ok' : realtime.state === 'connecting' ? 'warn' : realtime.state === 'disabled' ? 'unknown' : 'error', detail: realtime.state === 'connected' ? 'Pipeline 已连接' : realtime.message || '当前没有实时事件连接' },
+    { id: 'pipeline', label: '实时好友动态', state: realtime.state === 'connected' ? 'ok' : realtime.state === 'connecting' ? 'warn' : realtime.state === 'disabled' ? 'unknown' : 'error', detail: realtime.state === 'connected' ? '实时好友动态已连接' : realtime.message || '当前没有实时好友动态' },
     { id: 'route', label: '中国网络线路', state: route.mode === 'direct' ? 'warn' : 'ok', detail: route.mode === 'direct' ? '直连可用性取决于当前网络；遇阻时可切换系统或自有代理' : `${route.label}：${route.description}` },
     { id: 'media', label: '图片离线余量', state: cache ? (cache.mediaFiles > 0 ? 'ok' : 'warn') : 'unknown', detail: cache ? `本机已有 ${cache.mediaFiles} 个媒体文件` : '尚未读取缓存统计' },
     { id: 'world', label: '目标世界线索', state: hasWorldEvidence ? 'ok' : 'warn', detail: !selectedWorldId ? '尚未在活动计划中指定世界' : hasWorldEvidence ? '本机历史中已有该世界记录' : '本机没有该世界历史；起航前建议打开详情确认' },

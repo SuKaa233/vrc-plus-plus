@@ -271,10 +271,10 @@ function durationLabel(minutes: number) {
             <div><Globe2 :size="15" /><span>涉及世界</span><strong>{{ insights?.distinctWorlds ?? 0 }} 个</strong></div>
           </div>
           <div v-if="insights?.commonWorlds?.length" class="common-worlds"><span v-for="item in insights.commonWorlds" :key="item.worldId"><Globe2 :size="12" />{{ knownWorlds.get(item.worldId) || item.worldId }} · {{ item.count }} 条观测</span></div>
-          <div class="evidence-strip"><span>游戏日志 {{ insights?.sourceCounts?.gameLog ?? 0 }}</span><span>Pipeline {{ insights?.sourceCounts?.pipeline ?? 0 }}</span><span>首次观测 {{ dateLabel(insights?.firstObservedAt) }}</span></div>
+          <div class="evidence-strip"><span>游戏记录 {{ insights?.sourceCounts?.gameLog ?? 0 }}</span><span>实时动态 {{ insights?.sourceCounts?.pipeline ?? 0 }}</span><span>首次记录 {{ dateLabel(insights?.firstObservedAt) }}</span></div>
           <div class="replay-toolbar"><strong>好友聚焦回放</strong><div><button v-for="days in ([1,7,30] as const)" :key="days" :class="{ active: replayDays === days }" @click="replayDays = days">{{ days === 1 ? '24 小时' : `${days} 天` }}</button></div></div>
           <div v-if="replay.length" class="friend-timeline"><div v-for="event in replay.slice(0, 12)" :key="event.id"><i></i><span><strong>{{ event.title }}</strong><small>{{ event.detail }} · {{ dateTimeLabel(event.observedAt) }} · {{ event.source === 'gameLog' ? '游戏日志' : '实时观察' }}</small></span></div></div>
-          <p v-else class="muted-copy">暂无足够的 Pipeline 或游戏日志记录。未观测到不代表你们没有共同活动。</p>
+          <p v-else class="muted-copy">暂无足够的实时动态或游戏记录。没有记录不代表你们没有共同活动。</p>
         </section>
 
         <section v-if="profile?.note" class="detail-section">

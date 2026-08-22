@@ -23,7 +23,7 @@ function bytes(value = 0) {
     <div class="system-title"><div><span class="panel-kicker">分层状态</span><h3>系统与缓存中心</h3></div><button :disabled="loading" @click="emit('refresh')"><RefreshCw :size="15" :class="{ spin: loading }" />重新检测</button></div>
     <div class="layer-grid">
       <div><Database :size="17" /><span>本地数据库</span><strong :data-state="diagnostics?.database.ready ? 'ok' : 'error'">{{ diagnostics?.database.ready ? '可用' : '异常' }}</strong></div>
-      <div><Radio :size="17" /><span>Pipeline</span><strong :data-state="realtime.state === 'connected' ? 'ok' : 'degraded'">{{ realtime.state === 'connected' ? '已连接' : realtime.state === 'connecting' ? '连接中' : '未连接' }}</strong></div>
+      <div><Radio :size="17" /><span>实时好友动态</span><strong :data-state="realtime.state === 'connected' ? 'ok' : 'degraded'">{{ realtime.state === 'connected' ? '已连接' : realtime.state === 'connecting' ? '连接中' : '未连接' }}</strong></div>
       <div><HardDrive :size="17" /><span>网络出口</span><strong>{{ network.label }}</strong></div>
       <div><Image :size="17" /><span>图片缓存</span><strong>{{ cache?.mediaFiles ?? 0 }} 个 · {{ bytes(cache?.mediaBytes) }}</strong></div>
     </div>

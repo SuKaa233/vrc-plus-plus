@@ -21,9 +21,11 @@ import (
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/events"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/gamelog"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/guardian"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/hardware"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/localapi"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/media"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/photos"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/pipeline"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/presence"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/security"
@@ -40,7 +42,7 @@ const (
 )
 
 var (
-	version           = "0.9.0-beta.24"
+	version           = "0.9.0-beta.25"
 	defaultUpdateURLs = ""
 )
 
@@ -93,7 +95,7 @@ func run() error {
 	diagnosticService := diagnostics.New(store, vrcClient)
 	eventBus := events.NewBus()
 	gameLogWatcher := gamelog.New(gamelog.DefaultDirectory(), eventBus, logger)
-	guardianService := guardian.New(filepath.Join(*dataDirectory, "guardian-state.dat"), protector, eventBus, openBrowser, tray.Notify, logger)
+	guardianService := guardian.New(filepath.Join(*dataDirectory, "guardian-state.dat"), protector, eventBus, vrcClient, openBrowser, tray.Notify, logger)
 	guardianService.Start(ctx)
 	defer guardianService.Stop()
 	gameLogWatcher.Start()
@@ -125,6 +127,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	photoService, err := photos.New(filepath.Join(*dataDirectory, "photo-thumbnails"))
+	if err != nil {
+		return err
+	}
+	hardwareService := hardware.New()
 	updateService := updater.New(version, *dataDirectory, vrcClient.HTTPClientSnapshot(5*time.Minute), logger, defaultUpdateURLs)
 	shutdownRequest := make(chan struct{}, 1)
 	apiServer, err := localapi.New(localapi.Config{
@@ -138,6 +145,8 @@ func run() error {
 		Updater:      updateService,
 		Presence:     presenceService,
 		Guardian:     guardianService,
+		Photos:       photoService,
+		Hardware:     hardwareService,
 		Shutdown:     shutdownRequest,
 	}, vrcClient, diagnosticService, eventBus, pipelineManager, mediaService, logger)
 	if err != nil {

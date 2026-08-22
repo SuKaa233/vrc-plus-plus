@@ -7,6 +7,7 @@ import {
   BellRing,
   Box,
   Building2,
+  Camera,
   CheckCircle2,
   CircleAlert,
   Clock3,
@@ -87,6 +88,7 @@ import TodayView from "./TodayView.vue";
 import NotificationCenter from "./NotificationCenter.vue";
 import PresenceAlertsView from "./PresenceAlertsView.vue";
 import GuardianView from "./GuardianView.vue";
+import PhotoLibrary from "./PhotoLibrary.vue";
 import RecentAccess from "./RecentAccess.vue";
 import WorldDetailDrawer from "./WorldDetailDrawer.vue";
 import WorldMemory from "./WorldMemory.vue";
@@ -129,6 +131,7 @@ type View =
   | "focus"
   | "alerts"
   | "guardian"
+  | "photos"
   | "discovery"
   | "worlds"
   | "groups"
@@ -342,6 +345,7 @@ const viewCopy = computed(
           ],
           alerts: ["Alerts", "Presence alerts", "Desktop and email delivery."],
           guardian: ["Guardian", "VRChat guardian", "Recover and continue your last session."],
+          photos: ["Photos", "VRChat photo library", "Browse and manage photos saved by the VRChat camera."],
           discovery: [
             "Strangers",
             "Stranger explorer",
@@ -382,10 +386,11 @@ const viewCopy = computed(
           focus: [
             "特别关心",
             "好友全景档案",
-            "公开资料、本机证据、世界足迹与已观察关系。",
+            "公开资料、相遇记录、世界足迹与共同关系。",
           ],
           alerts: ["提醒", "上线提醒", "托盘与邮件推送。"],
           guardian: ["守护", "VRChat守护与续玩", "崩溃后回到刚才的房间。"],
+          photos: ["相片", "VRChat 相片库", "浏览、整理和编辑 VRChat 相机照片。"],
           discovery: ["陌生人", "陌生人查看", "公开关系线索、群组与最近同房记录。"],
           network: ["关系网", "好友关系网", "看看好友圈与共同连接。"],
           worlds: ["世界", "世界与实例", "发现世界与可加入实例。"],
@@ -512,6 +517,45 @@ async function dismissGuardianRecovery() {
   }
 }
 
+async function startGuardianSlotWatch(location:string) {
+  guardianActing.value = true;
+  guardianMessage.value = "";
+  try {
+    guardianStatus.value = await api.startGuardianSlotWatch(location, guardianStatus.value?.current?.worldName || guardianStatus.value?.last?.worldName || "");
+    guardianMessage.value = "空位提醒已开启；出现空位时会通过系统托盘通知。";
+  } catch (cause) {
+    guardianMessage.value = cause instanceof Error ? cause.message : "无法开启空位提醒";
+  } finally { guardianActing.value = false; }
+}
+
+async function stopGuardianSlotWatch() {
+  try { guardianStatus.value = await api.stopGuardianSlotWatch(); guardianMessage.value = "空位提醒已停止。"; }
+  catch (cause) { guardianMessage.value = cause instanceof Error ? cause.message : "无法停止空位提醒"; }
+}
+
+async function startGuardianMigrationWatch() {
+  guardianActing.value = true;
+  guardianMessage.value = "";
+  try {
+    guardianStatus.value = await api.startGuardianMigrationWatch();
+    guardianMessage.value = "好友去向追踪已开启；只核对刚才同房好友当前可见的位置。";
+  } catch (cause) {
+    guardianMessage.value = cause instanceof Error ? cause.message : "无法开启好友去向追踪";
+  } finally { guardianActing.value = false; }
+}
+
+async function stopGuardianMigrationWatch() {
+  try { guardianStatus.value = await api.stopGuardianMigrationWatch(); guardianMessage.value = "好友去向追踪已停止。"; }
+  catch (cause) { guardianMessage.value = cause instanceof Error ? cause.message : "无法停止好友去向追踪"; }
+}
+
+async function launchGuardianLocation(location:string) {
+  guardianActing.value = true;
+  try { await api.launchGuardianLocation(location); guardianMessage.value = "已打开 VRChat 官方启动链接；能否进入仍以实际访问权限为准。"; }
+  catch (cause) { guardianMessage.value = cause instanceof Error ? cause.message : "无法打开该实例"; }
+  finally { guardianActing.value = false; }
+}
+
 async function bootstrapDiscovery() {
   const selfID = session.value.user?.id;
   if (
@@ -562,7 +606,7 @@ async function bootstrapDiscovery() {
       }
     }
 
-    discoveryAutoMessage.value = "最近记录没有可用陌生人，正在从你的可见群组寻找候选…";
+    discoveryAutoMessage.value = "最近记录里还没有可查询的陌生人，正在从可见群组寻找可能认识的人…";
     try {
       const groups = await api.groups(selfID);
       const initialGroup = groups.items[0];
@@ -907,7 +951,7 @@ async function scanDiscoveryGroups() {
         errors.push(group.name);
       }
     }
-    discoveryScanMessage.value = `关系雷达完成：扫描 ${targets.length} 个群组，汇总 ${new Set(discoveryGroupMembers.value.map((item) => item.userId)).size} 位候选`;
+    discoveryScanMessage.value = `关系雷达已更新：查看 ${targets.length} 个群组，找到 ${new Set(discoveryGroupMembers.value.map((item) => item.userId)).size} 位可能认识的人`;
     if (discoveryGroups.value.length > targets.length)
       discoveryScanMessage.value += `；为控制请求，本次未扫描其余 ${discoveryGroups.value.length - targets.length} 个群组`;
     if (errors.length)
@@ -2110,6 +2154,11 @@ onBeforeUnmount(() => {
           >
             <Compass :size="19" /> {{ l("陌生人", "Strangers") }}</button
           ><button
+            :class="{ active: activeView === 'photos' }"
+            @click="selectView('photos')"
+          >
+            <Camera :size="19" /> {{ l("相片", "Photos") }}</button
+          ><button
             :class="{ active: activeView === 'network' }"
             @click="selectView('network')"
           >
@@ -2390,7 +2439,13 @@ onBeforeUnmount(() => {
             @resume="resumeGuardianSession"
             @dismiss="dismissGuardianRecovery"
             @refresh="loadGuardianStatus"
+            @start-slot-watch="startGuardianSlotWatch"
+            @stop-slot-watch="stopGuardianSlotWatch"
+            @start-migration-watch="startGuardianMigrationWatch"
+            @stop-migration-watch="stopGuardianMigrationWatch"
+            @open-location="launchGuardianLocation"
           />
+          <PhotoLibrary v-if="activeView === 'photos'" :api="api" />
           <GroupCenter
             v-if="activeView === 'groups'"
             :user-id="session.user?.id ?? ''"
@@ -2659,7 +2714,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <p>
-          网络配置同时用于 VRChat REST、Pipeline
+          网络配置同时用于 VRChat 资料读取和实时好友动态
           和图片缓存。建议优先使用“跟随系统”。
         </p>
         <SystemCenter

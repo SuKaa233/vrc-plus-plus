@@ -241,7 +241,7 @@ function dateTime(value?: string) {
       </section>
 
       <p v-if="error" class="focus-error"><AlertTriangle :size="15" />{{ error }}</p>
-      <section class="evidence-boundary panel"><ShieldCheck :size="18" /><p><strong>证据边界：</strong>页面只汇总当前账号可见的 VRChat 公开信息、Pipeline 与本机游戏日志。私人实例通常只能识别“处于私人位置”；关系新增表示两次扫描间新观察到共同好友关系，不能证明具体加好友时间，也不能读取对方私聊内容。</p></section>
+      <section class="evidence-boundary panel"><ShieldCheck :size="18" /><p><strong>信息范围：</strong>页面只汇总当前账号可见的 VRChat 公开资料、实时好友动态与游戏记录。私人实例通常只能识别“处于私人位置”；关系变化表示两次读取间新看到的共同好友，不能证明具体加好友时间，也不能读取对方私聊内容。</p></section>
 
       <section class="focus-metrics">
         <div class="panel"><Activity :size="18" /><span>本机日志覆盖</span><strong>{{ coverageText }}</strong></div>
@@ -287,7 +287,7 @@ function dateTime(value?: string) {
         <article class="panel focus-block timeline-block">
           <header><div><History :size="17" /><strong>完整本机日志</strong></div><span>{{ filteredTimeline.length }} / {{ targetEvents.length }}</span></header>
           <div class="timeline-filters"><button v-for="item in ([['all','全部'],['location','世界'],['private','私人'],['presence','上下线 / 同场']] as const)" :key="item[0]" :class="{ active: timelineFilter === item[0] }" @click="timelineFilter = item[0]">{{ item[1] }}</button></div>
-          <div class="focus-timeline"><div v-for="event in filteredTimeline" :key="event.id"><i :data-private="event.locationKind === 'private'"></i><span><strong>{{ eventLabel(event) }}</strong><small>{{ dateTime(event.observedAt) }} · {{ event.type.startsWith('game.') ? '游戏日志' : 'Pipeline' }}</small></span></div><p v-if="!filteredTimeline.length">当前筛选范围暂无日志。未观测到不代表没有发生。</p></div>
+          <div class="focus-timeline"><div v-for="event in filteredTimeline" :key="event.id"><i :data-private="event.locationKind === 'private'"></i><span><strong>{{ eventLabel(event) }}</strong><small>{{ dateTime(event.observedAt) }} · {{ event.type.startsWith('game.') ? '游戏记录' : '实时动态' }}</small></span></div><p v-if="!filteredTimeline.length">当前筛选范围暂无记录。没有记录不代表没有发生。</p></div>
         </article>
       </section>
     </template>

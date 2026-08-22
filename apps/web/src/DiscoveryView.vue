@@ -33,7 +33,7 @@ const storageName = computed(() => `vrcpp-strangers:${props.storageKey}`)
 const demoTarget:UserProfile = { id:'usr_demo_target', displayName:'示例陌生人', bio:'这里会展示真实用户公开的简介、状态与关系证据。', pronouns:'示例', status:'active', statusDescription:'正在探索公开世界', platform:'standalonewindows', dateJoined:'2023-05-20', isFriend:false, allowAvatarCopying:false, trustLevel:'known', languages:['中文','English'], mutualFriendCount:2, mutualGroupCount:2, profileSources:['user','publicProfile','mutuals'], activityVisibility:'visible' }
 const demoMutuals:MutualFriend[] = [{ id:'usr_demo_bridge_a', displayName:'共同好友 A' },{ id:'usr_demo_bridge_b', displayName:'共同好友 B' }]
 const demoGroups:Group[] = [{ id:'grp_demo_world', name:'公开群组 · World Hop', memberCount:320, isRepresenting:true },{ id:'grp_demo_social', name:'公开群组 · Social', memberCount:180, isRepresenting:false }]
-const demoMembers:GroupMember[] = [{ userId:'usr_demo_candidate_a', groupId:'grp_demo_world', displayName:'跨圈候选 A', isRepresenting:false },{ userId:'usr_demo_candidate_a', groupId:'grp_demo_social', displayName:'跨圈候选 A', isRepresenting:false },{ userId:'usr_demo_candidate_b', groupId:'grp_demo_world', displayName:'群组候选 B', isRepresenting:false }]
+const demoMembers:GroupMember[] = [{ userId:'usr_demo_candidate_a', groupId:'grp_demo_world', displayName:'可能认识的人 A', isRepresenting:false },{ userId:'usr_demo_candidate_a', groupId:'grp_demo_social', displayName:'可能认识的人 A', isRepresenting:false },{ userId:'usr_demo_candidate_b', groupId:'grp_demo_world', displayName:'可能认识的人 B', isRepresenting:false }]
 const recentUsers = computed(() => {
   const byID = new Map<string, { user: UserProfile; count: number; latest: string }>()
   for (const event of props.events) {
@@ -120,7 +120,7 @@ watch(storageName, loadSaved)
     </article>
     <div class="source-stats">
       <div><Search :size="16" /><span><strong>{{ results.length }}</strong>搜索结果</span></div><div><Clock3 :size="16" /><span><strong>{{ recentUsers.length }}</strong>最近遇见</span></div>
-      <div><Users :size="16" /><span><strong>{{ publicCandidates.length }}</strong>群组候选</span></div><div><Bookmark :size="16" /><span><strong>{{ saved.length }}</strong>本地收藏</span></div>
+      <div><Users :size="16" /><span><strong>{{ publicCandidates.length }}</strong>可能认识的人</span></div><div><Bookmark :size="16" /><span><strong>{{ saved.length }}</strong>本地收藏</span></div>
     </div>
 
     <article v-if="!expandedUser" class="auto-discovery-card">
@@ -139,7 +139,7 @@ watch(storageName, loadSaved)
     <article v-else-if="searched && !loading" class="stranger-section empty"><Search :size="18" /><strong>没有找到匹配用户</strong><span>可直接输入完整 usr_ 用户 ID。</span></article>
 
     <article v-if="expandedUser || expanding || clueError" class="stranger-section clue-section">
-      <header><div><Link2 :size="17" /><strong>{{ expandedUser?.displayName || '关系线索' }}</strong></div><span>共同好友为接口确认；群组和同房记录用于辅助交叉验证</span></header>
+      <header><div><Link2 :size="17" /><strong>{{ expandedUser?.displayName || '关系线索' }}</strong></div><span>共同好友来自 VRChat；群组和同房记录用于辅助判断</span></header>
       <div v-if="expanding && !expandedUser" class="empty"><LoaderCircle class="spin" :size="18" />正在读取公开档案…</div>
       <template v-else>
         <div v-if="expandedUser" class="dossier">
@@ -151,7 +151,7 @@ watch(storageName, loadSaved)
           <div class="fact-columns">
             <section><header><Globe2 :size="15" /><strong>活动与位置</strong></header><dl><div><dt>当前活动</dt><dd>{{ activityText(expandedUser) }}</dd></div><div><dt>世界 ID</dt><dd>{{ expandedUser.worldId || '未公开' }}</dd></div><div><dt>实例 ID</dt><dd>{{ expandedUser.instanceId || '未公开' }}</dd></div><div><dt>前往世界</dt><dd>{{ expandedUser.travelingToWorld || '无' }}</dd></div><div><dt>前往实例</dt><dd>{{ expandedUser.travelingToInstance || expandedUser.travelingToLocation || '无' }}</dd></div></dl></section>
             <section><header><Clock3 :size="15" /><strong>时间记录</strong></header><dl><div><dt>最后活动</dt><dd>{{ fullDate(expandedUser.lastActivity) }}</dd></div><div><dt>最后登录</dt><dd>{{ fullDate(expandedUser.lastLogin) }}</dd></div><div><dt>最后移动端</dt><dd>{{ fullDate(expandedUser.lastMobile) }}</dd></div><div><dt>活动可见性</dt><dd>{{ expandedUser.activityVisibility === 'restricted' ? '受限' : '当前账号可见' }}</dd></div></dl></section>
-            <section><header><ShieldCheck :size="15" /><strong>身份与权限</strong></header><dl><div><dt>开发者类型</dt><dd>{{ expandedUser.developerType || 'none' }}</dd></div><div><dt>头像复制</dt><dd>{{ expandedUser.allowAvatarCopying ? '允许' : '不允许或未公开' }}</dd></div><div><dt>年龄验证</dt><dd>{{ expandedUser.ageVerificationStatus || (expandedUser.ageVerified ? '已验证' : '未公开') }}</dd></div><div><dt>资料来源</dt><dd>{{ sourceText(expandedUser.profileSources) }}</dd></div></dl></section>
+            <section><header><ShieldCheck :size="15" /><strong>账号与权限</strong></header><dl><div><dt>账号类型</dt><dd>{{ expandedUser.developerType || '普通用户' }}</dd></div><div><dt>头像复制</dt><dd>{{ expandedUser.allowAvatarCopying ? '允许' : '不允许或未公开' }}</dd></div><div><dt>年龄验证</dt><dd>{{ expandedUser.ageVerificationStatus || (expandedUser.ageVerified ? '已验证' : '未公开') }}</dd></div><div><dt>资料来源</dt><dd>{{ sourceText(expandedUser.profileSources) }}</dd></div></dl></section>
             <section><header><Sparkles :size="15" /><strong>资料装饰</strong></header><dl><div><dt>主题</dt><dd>{{ expandedUser.themeId || '默认' }}</dd></div><div><dt>图标框</dt><dd>{{ expandedUser.iconFrame || '默认' }}</dd></div><div><dt>铭牌效果</dt><dd>{{ expandedUser.nameplateEffect || '无' }}</dd></div><div><dt>资料效果</dt><dd>{{ expandedUser.profileEffect || '无' }}</dd></div><div><dt>横幅 / 背景</dt><dd>{{ [expandedUser.bannerType, expandedUser.backgroundType].filter(Boolean).join(' · ') || '默认' }}</dd></div></dl></section>
           </div>
           <div v-if="expandedUser.representedGroup" class="represented-group"><span class="group-icon"><img v-if="expandedUser.representedGroup.iconUrl" :src="mediaUrl(expandedUser.representedGroup.iconUrl)" alt="" /><Users v-else :size="17" /></span><span><small>代表群组</small><strong>{{ expandedUser.representedGroup.name || expandedUser.representedGroup.id }}</strong></span></div>
@@ -160,15 +160,15 @@ watch(storageName, loadSaved)
         </div>
         <div v-if="clueError" class="clue-error">{{ clueError }}</div><div v-if="expanding" class="inline-loading"><LoaderCircle class="spin" :size="14" />{{ scanMessage || '正在补全关系数据…' }}</div><div v-else-if="scanMessage" class="scan-summary"><Check :size="13" />{{ scanMessage }}</div>
         <section class="mutual-evidence">
-          <header><div><Users :size="16" /><span><strong>对方好友中可验证的部分</strong><small>共同好友是接口确认的好友交集，不依赖群组推测</small></span></div><button :disabled="expanding" @click="emit('refreshMutuals')"><LoaderCircle v-if="expanding" class="spin" :size="13" /><Link2 v-else :size="13" />刷新共同好友</button></header>
+          <header><div><Users :size="16" /><span><strong>你们的共同好友</strong><small>共同好友来自 VRChat 返回的好友交集，不依赖群组推测</small></span></div><button :disabled="expanding" @click="emit('refreshMutuals')"><LoaderCircle v-if="expanding" class="spin" :size="13" /><Link2 v-else :size="13" />刷新共同好友</button></header>
           <div class="mutual-summary"><b>{{ mutuals.length }}</b><span>位共同好友明细</span><i>{{ mutualMeta.optedOut ? '对方未共享或接口不可用' : mutualMeta.source === 'cache' ? '本地缓存' : '实时接口' }}<template v-if="mutualMeta.fetchedAt"> · {{ fullDate(mutualMeta.fetchedAt) }}</template></i></div>
           <div v-if="mutuals.length" class="mutual-grid"><button v-for="user in mutuals" :key="user.id" @click="emit('resolveUser',user.id)"><span class="mini-avatar"><img v-if="mutualAvatar(user)" :src="mutualAvatar(user)" alt="" loading="lazy" /><b v-else>{{ user.displayName.slice(0,1) }}</b></span><span><strong>{{ user.displayName }}</strong><small>{{ statusText(user.status) }}<template v-if="user.statusDescription"> · {{ user.statusDescription }}</template></small></span><ExternalLink :size="13" /></button></div>
           <p v-else class="mutual-empty">{{ mutualMeta.message || '当前没有返回共同好友明细；这不等于对方没有好友，也不能据此读取其完整好友列表。' }}</p>
           <footer v-if="mutuals.length">已完整列出 {{ mutuals.length }} 位共同好友；列表区域可独立滚动。</footer>
         </section>
         <div class="group-strip"><button v-for="group in groups" :key="group.id" :class="{ active: selectedGroupId === group.id }" @click="emit('loadGroup', group)"><span>{{ group.name }}</span><small>{{ group.memberCount ? `${group.memberCount} 人` : group.shortCode || '公开群组' }}</small></button><span v-if="!groups.length && !expanding">该用户没有对你公开群组列表</span></div>
-        <div v-if="groups.length" class="radar-toolbar"><div><strong>关系雷达</strong><small>合并重复人物，共同出现群组越多排序越靠前</small></div><label><Search :size="13" /><input v-model="candidateQuery" placeholder="筛选候选人" /></label><button :disabled="expanding" @click="emit('scanGroups')"><LoaderCircle v-if="expanding" class="spin" :size="13" /><Link2 v-else :size="13" />扫描可见群组</button></div>
-        <div v-if="selectedGroupId" class="group-result-title"><span>{{ selectedGroup?.name }} · 已汇总 {{ publicCandidates.length }} 位圈外候选</span><small>每个群组最多读取 100 位，已排除你的好友</small></div>
+        <div v-if="groups.length" class="radar-toolbar"><div><strong>关系雷达</strong><small>合并重复人物，共同出现群组越多排序越靠前</small></div><label><Search :size="13" /><input v-model="candidateQuery" placeholder="筛选可能认识的人" /></label><button :disabled="expanding" @click="emit('scanGroups')"><LoaderCircle v-if="expanding" class="spin" :size="13" /><Link2 v-else :size="13" />查找群组关系</button></div>
+        <div v-if="selectedGroupId" class="group-result-title"><span>{{ selectedGroup?.name }} · 找到 {{ publicCandidates.length }} 位好友圈外的人</span><small>每个群组最多读取 100 位，已排除你的好友</small></div>
         <div v-if="publicCandidates.length" class="candidate-grid"><button v-for="user in publicCandidates" :key="user.id" @click="emit('open', user)"><span class="mini-avatar"><img v-if="avatar(user)" :src="avatar(user)" alt="" loading="lazy" /><b v-else>{{ user.displayName.slice(0, 1) }}</b></span><span><strong>{{ user.displayName }}</strong><small>{{ candidateSource(user) }}</small><em v-if="user.statusDescription">{{ user.statusDescription }}</em></span><b v-if="user.sourceGroupIds.length > 1" class="source-score">{{ user.sourceGroupIds.length }}</b><ExternalLink v-else :size="13" /></button></div>
         <StrangerNetworkGraph v-if="expandedUser" :self="self" :target="expandedUser" :mutuals="mutuals" :groups="groups" :members="groupMembers" :events="events" :media-url="mediaUrl" @open-user="emit('resolveUser', $event)" />
       </template>

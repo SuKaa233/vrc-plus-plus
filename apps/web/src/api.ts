@@ -303,6 +303,26 @@ export interface GuardianStatus {
   canResume: boolean
   dismissed: boolean
   message: string
+  slotWatch?: {
+    location:string; worldName?:string; startedAt:string; expiresAt:string; lastCheckedAt?:string; nextCheckAt:string
+    userCount:number; capacity:number; queueSize:number; state:'watching'|'available'|'expired'; message:string
+  }
+  migration?: {
+    sourceLocation:string; startedAt:string; expiresAt:string; lastCheckedAt?:string; nextCheckAt:string
+    tracked:Array<{ userId?:string; displayName:string }>; state:'watching'|'expired'; message:string
+    destinations?:Array<{ location:string; worldId:string; region?:string; observedAt:string; people:Array<{ userId?:string; displayName:string }> }>
+  }
+}
+
+export interface VRPhoto {
+  id:string; name:string; relativePath:string; extension:string; contentType:string; size:number; width:number; height:number; modifiedAt:string; capturedAt?:string
+}
+export interface VRPhotoDetail extends VRPhoto { absolutePath:string; aspectRatio:string; megapixels:number; sha256?:string; metadata?:Record<string,string> }
+export interface VRPhotoListing { directory:string; items:VRPhoto[]; total:number; offset:number; limit:number; message?:string }
+export interface VRHardwareStatus {
+  devices:Array<{ name:string; manufacturer?:string; deviceId?:string; family:string; state:'connected'; relatedDevices?:string[] }>
+  runtimes:Array<{ name:string; installed:boolean; running:boolean }>
+  checkedAt:string; message:string
 }
 
 export interface UpdateStatus {
@@ -659,6 +679,20 @@ export class LocalApi {
   guardianStatus(): Promise<GuardianStatus> { return this.request('/local/v1/guardian') }
   resumeGuardianSession(): Promise<{ launched:boolean; target:string }> { return this.request('/local/v1/guardian/resume', { method: 'POST' }) }
   dismissGuardianRecovery(): Promise<GuardianStatus> { return this.request('/local/v1/guardian/dismiss', { method: 'POST' }) }
+  launchGuardianLocation(location:string): Promise<{ launched:boolean; target:string }> { return this.request('/local/v1/guardian/launch', { method:'POST', body:JSON.stringify({ location }) }) }
+  startGuardianSlotWatch(location:string, worldName='', durationMinutes=120): Promise<GuardianStatus> { return this.request('/local/v1/guardian/slot-watch', { method:'POST', body:JSON.stringify({ location, worldName, durationMinutes }) }) }
+  stopGuardianSlotWatch(): Promise<GuardianStatus> { return this.request('/local/v1/guardian/slot-watch', { method:'DELETE' }) }
+  startGuardianMigrationWatch(durationMinutes=30): Promise<GuardianStatus> { return this.request('/local/v1/guardian/migration-watch', { method:'POST', body:JSON.stringify({ durationMinutes }) }) }
+  stopGuardianMigrationWatch(): Promise<GuardianStatus> { return this.request('/local/v1/guardian/migration-watch', { method:'DELETE' }) }
+  photos(q='', offset=0, limit=120): Promise<VRPhotoListing> { return this.request(`/local/v1/photos?${new URLSearchParams({ q, offset:String(offset), limit:String(limit) })}`) }
+  photoDetail(id:string): Promise<VRPhotoDetail> { return this.request(`/local/v1/photos/${encodeURIComponent(id)}`) }
+  photoContentUrl(id:string, stamp=''): string { return `/local/v1/photos/${encodeURIComponent(id)}/content${stamp?`?v=${encodeURIComponent(stamp)}`:''}` }
+  photoThumbnailUrl(id:string, stamp=''): string { return `/local/v1/photos/${encodeURIComponent(id)}/thumbnail${stamp?`?v=${encodeURIComponent(stamp)}`:''}` }
+  rotatePhoto(id:string, direction:'left'|'right'): Promise<VRPhotoDetail> { return this.request(`/local/v1/photos/${encodeURIComponent(id)}/rotate`, { method:'POST', body:JSON.stringify({ direction }) }) }
+  renamePhoto(id:string, name:string): Promise<VRPhotoDetail> { return this.request(`/local/v1/photos/${encodeURIComponent(id)}/rename`, { method:'POST', body:JSON.stringify({ name }) }) }
+  revealPhoto(id:string): Promise<{opened:boolean}> { return this.request(`/local/v1/photos/${encodeURIComponent(id)}/reveal`, { method:'POST' }) }
+  deletePhoto(id:string): Promise<{deleted:boolean;message:string}> { return this.request(`/local/v1/photos/${encodeURIComponent(id)}`, { method:'DELETE' }) }
+  vrHardware(refresh=false): Promise<VRHardwareStatus> { return this.request(`/local/v1/hardware/vr${refresh?'?refresh=1':''}`) }
 
   updateStatus(): Promise<UpdateStatus> { return this.request('/local/v1/update') }
   checkUpdate(): Promise<UpdateStatus> { return this.request('/local/v1/update/check', { method: 'POST' }) }

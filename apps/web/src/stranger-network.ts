@@ -131,7 +131,7 @@ export function relationshipInsights(input:StrangerGraphInput):RelationshipInsig
     const ratio = Math.round(largestGroup[1]/total*100)
     insights.push({ id:'circle-concentration', title:ratio>=60?'可见关系集中在单一圈层':'可见关系分布在多个圈层', summary:`${group?.name||largestGroup[0]} 占当前可见群组成员记录的 ${ratio}%。这反映本次采样的集中度，不代表目标完整社交结构。`, confidence:'中', evidence:[`${group?.name||largestGroup[0]}：${largestGroup[1]} 条成员记录`,`总样本：${input.members.length} 条`], tone:'balanced' })
   }
-  if (coPresenceCount) insights.push({ id:'co-presence', title:'发现重复同实例线索', summary:`关系图发现 ${coPresenceCount} 条目标与候选人在同一实例、30 分钟窗口内出现的日志连线。它支持“曾被同时观察”，不能证明双方发生互动。`, confidence:'中', evidence:[`${coPresenceCount} 条同实例时间窗口匹配`,'数据来自本机 VRChat 日志'], tone:'strong' })
+  if (coPresenceCount) insights.push({ id:'co-presence', title:'发现重复同实例线索', summary:`关系图发现 ${coPresenceCount} 条目标与其他人在同一实例、30 分钟窗口内出现的日志连线。它支持“曾被同时观察”，不能证明双方发生互动。`, confidence:'中', evidence:[`${coPresenceCount} 条同实例时间窗口匹配`,'数据来自本机 VRChat 日志'], tone:'strong' })
   if (input.target.dateJoined) {
     const joined = new Date(input.target.dateJoined)
     const years = Number.isNaN(joined.getTime())?0:Math.max(0,Math.floor((Date.now()-joined.getTime())/(365.25*24*60*60*1000)))

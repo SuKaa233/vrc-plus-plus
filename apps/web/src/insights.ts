@@ -107,7 +107,7 @@ function patternCards(events: ActivityEvent[], friends: Friend[], predicate: (da
   const counts = new Map<string, number>()
   for (const event of events) { const date = new Date(event.observedAt); if (event.userId && (event.worldId || event.type === 'game.player-joined' || event.type === 'game.player-left') && predicate(date)) counts.set(event.userId, (counts.get(event.userId) ?? 0) + 1) }
   const friendByID = new Map(friends.map((item) => [item.id, item])); const coverage = coverageDays(events); const bounds = timeBounds(24)
-  return [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8).map(([id,count])=>({id:`pattern:${label}:${id}`,kind:'pattern',title:friendByID.get(id)?.displayName||id,summary:`${label}记录到 ${count} 条相关事件`,score:count,reasons:['来自本机 Pipeline 与游戏日志','事件数量不等于共同会话次数'],coverageDays:coverage,...bounds,targetUserId:id}))
+  return [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8).map(([id,count])=>({id:`pattern:${label}:${id}`,kind:'pattern',title:friendByID.get(id)?.displayName||id,summary:`${label}记录到 ${count} 条相关动态`,score:count,reasons:['来自实时好友动态与游戏记录','动态数量不等于共同会话次数'],coverageDays:coverage,...bounds,targetUserId:id}))
 }
 
 export function queryLocalSocial(query: string, friends: Friend[], worlds: World[], events: ActivityEvent[], network: FriendNetwork | null): LocalQueryResult {

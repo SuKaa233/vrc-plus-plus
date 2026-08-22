@@ -21,7 +21,7 @@ $mirrors.Add("https://github.com/$Repository/releases/download/v$version/$instal
 if ($ReleaseNotes.Count -eq 0) {
     $releaseNotesFile = Join-Path $workspace "docs\release-notes-$version.md"
     if (Test-Path -LiteralPath $releaseNotesFile) {
-        $ReleaseNotes = @(Get-Content -LiteralPath $releaseNotesFile | Where-Object { $_.TrimStart().StartsWith('- ') } | ForEach-Object { $_.Trim().Substring(2) } | Select-Object -First 4)
+        $ReleaseNotes = @(Get-Content -LiteralPath $releaseNotesFile -Encoding UTF8 | Where-Object { $_.TrimStart().StartsWith('- ') } | ForEach-Object { $_.Trim().Substring(2) } | Select-Object -First 4)
     }
     if ($ReleaseNotes.Count -eq 0) { $ReleaseNotes = @("Update VRC++ to $version") }
 }
