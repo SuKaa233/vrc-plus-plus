@@ -13,6 +13,15 @@ describe('layoutFriendNetwork', () => {
     expect(first.find((node) => node.id === 'c')?.degree).toBe(0)
   })
 
+  it('keeps a 500-friend regression fixture bounded', () => {
+    const nodes=Array.from({length:500},(_,index)=>({id:`usr_${index}`,displayName:`Friend ${index}`,online:false,scanned:true,optedOut:false}))
+    const edges=Array.from({length:5000},(_,index)=>({source:`usr_${index%500}`,target:`usr_${(index*17+31)%500}`})).filter(edge=>edge.source!==edge.target)
+    const started=performance.now();const positions=layoutFriendNetwork(nodes,edges,1800,1100);const elapsed=performance.now()-started
+    expect(positions).toHaveLength(500);expect(positions.every(node=>Number.isFinite(node.x)&&Number.isFinite(node.y))).toBe(true)
+    expect(selectNetworkRenderEdges(edges,1400).length).toBeLessThanOrEqual(1400)
+    expect(elapsed).toBeLessThan(2500)
+  })
+
   it('keeps the pointer anchor stable while zooming', () => {
     const result = zoomAroundPoint(1, 2, 0, 0, 250, 120)
     expect(result).toEqual({ zoom: 2, panX: -250, panY: -120 })

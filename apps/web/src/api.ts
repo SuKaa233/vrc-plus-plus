@@ -72,7 +72,7 @@ export interface Friend {
 export interface UserBadge { id?:string; badgeId?:string; name?:string; description?:string; imageUrl?:string; hidden?:boolean }
 export interface RepresentedGroup { id?:string; name?:string; iconUrl?:string; bannerUrl?:string }
 
-export interface PresenceWatchRule { userId:string; displayName:string; notifyOnline:boolean; notifyOffline:boolean; desktopEnabled:boolean; emailEnabled:boolean; updatedAt:string; currentState?:'online'|'offline' }
+export interface PresenceWatchRule { userId:string; displayName:string; notifyOnline:boolean; notifyOffline:boolean; notifyLocation:boolean; notifyJoinable:boolean; desktopEnabled:boolean; emailEnabled:boolean; minOnlineSeconds:number; quietStart?:string; quietEnd?:string; emailMode:'instant'|'digest'; digestHour:number; updatedAt:string; currentState?:'online'|'offline' }
 export interface EmailSettings { enabled:boolean; host:string; port:number; security:'starttls'|'tls'; username:string; from:string; to:string; configured:boolean; password?:string }
 export interface NotificationDelivery { id:number; userId?:string; displayName?:string; eventType:string; channel:string; status:string; message:string; observedAt:string; sentAt?:string; error?:string }
 
@@ -276,6 +276,33 @@ export interface GameLogStatus {
   lastReadAt?: string
   events: number
   message?: string
+}
+
+export interface GuardianSession {
+  worldId: string
+  worldName?: string
+  instanceId: string
+  location: string
+  locationKind: 'public' | 'friends' | 'friends_plus' | 'invite' | 'invite_plus' | 'group'
+  accessOwnerId?: string
+  groupId?: string
+  region?: string
+  joinedAt: string
+  lastObservedAt: string
+  participantCount: number
+  participants?: Array<{ userId?:string; displayName:string }>
+}
+
+export interface GuardianStatus {
+  gameRunning: boolean
+  state: 'idle' | 'protecting' | 'recovery' | 'ready'
+  exitKind?: 'clean' | 'unexpected'
+  exitAt?: string
+  current?: GuardianSession
+  last?: GuardianSession
+  canResume: boolean
+  dismissed: boolean
+  message: string
 }
 
 export interface UpdateStatus {
@@ -628,6 +655,10 @@ export class LocalApi {
   gameLogStatus(): Promise<GameLogStatus> {
     return this.request('/local/v1/game-log/status')
   }
+
+  guardianStatus(): Promise<GuardianStatus> { return this.request('/local/v1/guardian') }
+  resumeGuardianSession(): Promise<{ launched:boolean; target:string }> { return this.request('/local/v1/guardian/resume', { method: 'POST' }) }
+  dismissGuardianRecovery(): Promise<GuardianStatus> { return this.request('/local/v1/guardian/dismiss', { method: 'POST' }) }
 
   updateStatus(): Promise<UpdateStatus> { return this.request('/local/v1/update') }
   checkUpdate(): Promise<UpdateStatus> { return this.request('/local/v1/update/check', { method: 'POST' }) }

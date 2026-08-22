@@ -11,6 +11,8 @@ export interface DailyBriefItem {
   userIds: string[]
   worldId?: string
   observedAt?: string
+  evidence: string[]
+  confidence: '高' | '中' | '低'
 }
 
 export interface ReplayEntry {
@@ -46,6 +48,12 @@ export interface FriendCoverage {
   scanned: boolean
   visibleNow: boolean
   level: '充分' | '有限' | '稀少'
+  observationDays: number
+  firstObservedAt?: string
+  pipelineEvents: number
+  gameLogEvents: number
+  visibleLocationEvents: number
+  score: number
 }
 
 export interface WorldMemoryEntry {
@@ -94,7 +102,7 @@ export function buildDailyBrief(
   const unread = notifications.filter((item) => !item.seen)
   if (unread.length) candidates.push({
     id: 'requests', kind: 'request', title: `${unread.length} 条通知等待处理`,
-    summary: '逐项查看后再决定是否接受、隐藏或标记已读。', score: 120 + unread.length, userIds: unread.map((item) => item.senderUserId).filter((value): value is string => !!value),
+    summary: '逐项查看后再决定是否接受、隐藏或标记已读。', score: 120 + unread.length, userIds: unread.map((item) => item.senderUserId).filter((value): value is string => !!value), evidence:[`${unread.length} 条当前未读通知`], confidence:'高',
   })
 
   const worldById = new Map(worlds.map((world) => [world.id, world]))
@@ -111,7 +119,7 @@ export function buildDailyBrief(
     candidates.push({
       id: `gathering:${worldId}`, kind: 'gathering', title: `${members.length} 位好友正在同一世界`,
       summary: `${worldById.get(worldId)?.name || '世界资料待补'} · ${members.slice(0, 3).map((item) => item.displayName).join('、')}`,
-      score: 110 + members.length * 4, userIds: members.map((item) => item.id), worldId,
+      score: 110 + members.length * 4, userIds: members.map((item) => item.id), worldId, evidence:[`${members.length} 位好友当前返回同一世界 ID`,'仅代表当前可见位置，不证明实际互动'], confidence:'高',
     })
   }
 
@@ -120,7 +128,7 @@ export function buildDailyBrief(
   if (intersection) candidates.push({
     id: `intersection:${intersection.id}`, kind: 'intersection', title: `${intersection.communityIds.length} 个朋友圈正在交汇`,
     summary: `${intersection.title} · ${intersection.userIds.length} 位好友 · ${intersection.crossEdges} 条已观察跨圈连线`,
-    score: 105 + intersection.communityIds.length * 5, userIds: intersection.userIds, worldId: intersection.worldId,
+    score: 105 + intersection.communityIds.length * 5, userIds: intersection.userIds, worldId: intersection.worldId, evidence:[`${intersection.communityIds.length} 个本机划分的朋友圈`,`${intersection.crossEdges} 条已观察关系边`], confidence:intersection.crossEdges>0?'中':'低',
   })
 
   const lastByUser = new Map<string, ActivityEvent>()
@@ -132,7 +140,7 @@ export function buildDailyBrief(
     const days = Math.floor((now.getTime() - time(previous.observedAt)) / 86400000)
     candidates.push({
       id: `reunion:${friend.id}`, kind: 'reunion', title: `${friend.displayName} 已经 ${days} 天没在本机记录中出现`,
-      summary: '好友当前在线；位置隐私保持原样，打开资料后再决定是否联系。', score: 80 + Math.min(days, 60), userIds: [friend.id], observedAt: previous.observedAt,
+      summary: '好友当前在线；位置隐私保持原样，打开资料后再决定是否联系。', score: 80 + Math.min(days, 60), userIds: [friend.id], observedAt: previous.observedAt, evidence:[`最后一条本机相关事件距今 ${days} 天`,'当前好友快照显示在线'], confidence:'中',
     })
   }
 
@@ -141,7 +149,7 @@ export function buildDailyBrief(
   if (recentScene) candidates.push({
     id: `memory:${recentScene.id}`, kind: 'memory', title: '最近出现了一次多人同场',
     summary: `${recentScene.title} · ${recentScene.userIds.length} 位好友 · ${recentScene.eventCount} 条本机观测`,
-    score: 70 + recentScene.userIds.length, userIds: recentScene.userIds, worldId: recentScene.worldId, observedAt: recentScene.observedAt,
+    score: 70 + recentScene.userIds.length, userIds: recentScene.userIds, worldId: recentScene.worldId, observedAt: recentScene.observedAt, evidence:[`${recentScene.eventCount} 条本机事件`,`${recentScene.userIds.length} 位人物在相近时段出现`], confidence:recentScene.eventCount>=4?'中':'低',
   })
   return candidates.sort((left, right) => right.score - left.score || left.id.localeCompare(right.id)).slice(0, 5)
 }
@@ -184,7 +192,7 @@ export function buildIntersectionChanges(events: ActivityEvent[], worlds: World[
       delta: currentCount - previousCount,
       userIds: next?.userIds ?? before?.userIds ?? [],
     }
-  }).filter((item) => item.delta !== 0).sort((left, right) => Math.abs(right.delta) - Math.abs(left.delta)).slice(0, 6)
+  }).filter((item) => item.delta !== 0).sort((left, right) => Math.abs(right.delta) - Math.abs(left.delta))
 }
 
 export function buildMovementChains(events: ActivityEvent[], days: 1 | 7 | 30, now = new Date()): MovementChain[] {
@@ -216,11 +224,14 @@ export function buildMovementChains(events: ActivityEvent[], days: 1 | 7 | 30, n
 }
 
 export function buildCoverageMap(friends: Friend[], events: ActivityEvent[], network: FriendNetwork | null): FriendCoverage[] {
-  const observations = new Map<string, { count: number; last: string }>()
+  const observations = new Map<string, { count: number; last: string; first: string; days:Set<string>; pipeline:number; gameLog:number; visible:number }>()
   for (const event of events) if (event.userId) {
-    const value = observations.get(event.userId) ?? { count: 0, last: '' }
+    const value = observations.get(event.userId) ?? { count: 0, last: '', first:'', days:new Set<string>(), pipeline:0, gameLog:0, visible:0 }
     value.count += 1
     if (event.observedAt > value.last) value.last = event.observedAt
+    if (!value.first || event.observedAt < value.first) value.first = event.observedAt
+    value.days.add(event.observedAt.slice(0,10)); if(event.type.startsWith('game.')) value.gameLog+=1; else value.pipeline+=1
+    if(event.worldId) value.visible+=1
     observations.set(event.userId, value)
   }
   const scanned = new Set((network?.nodes ?? []).filter((node) => node.scanned).map((node) => node.id))
@@ -228,9 +239,9 @@ export function buildCoverageMap(friends: Friend[], events: ActivityEvent[], net
   return friends.map((friend) => {
     const value = observations.get(friend.id)
     const eventCount = value?.count ?? 0
-    const evidence = eventCount + (scanned.has(friend.id) ? 3 : 0) + (worldIdFromLocation(friend.location) ? 2 : 0)
-    const level: FriendCoverage['level'] = evidence >= 12 ? '充分' : evidence >= 4 ? '有限' : '稀少'
-    return { userId: friend.id, eventCount, lastObservedAt: value?.last, scanned: scanned.has(friend.id), visibleNow: !!worldIdFromLocation(friend.location), level }
+    const observationDays=value?.days.size??0; const score=Math.min(100,observationDays*12+Math.min(eventCount,30)+(scanned.has(friend.id)?15:0)+(value?.pipeline&&value?.gameLog?10:0))
+    const level: FriendCoverage['level'] = score >= 65 ? '充分' : score >= 25 ? '有限' : '稀少'
+    return { userId: friend.id, eventCount, lastObservedAt: value?.last, firstObservedAt:value?.first, scanned: scanned.has(friend.id), visibleNow: !!worldIdFromLocation(friend.location), level, observationDays, pipelineEvents:value?.pipeline??0, gameLogEvents:value?.gameLog??0, visibleLocationEvents:value?.visible??0, score }
   }).sort((left, right) => levelOrder[left.level] - levelOrder[right.level] || right.eventCount - left.eventCount)
 }
 

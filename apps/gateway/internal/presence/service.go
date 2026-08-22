@@ -12,6 +12,7 @@ import (
 	"net/smtp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/events"
@@ -30,10 +31,12 @@ type Service struct {
 	notify    func(string, string) error
 	logger    *slog.Logger
 	cancel    context.CancelFunc
+	mu        sync.Mutex
+	pending   map[string]context.CancelFunc
 }
 
 func New(store *storage.Store, protector security.Protector, bus *events.Bus, notify func(string, string) error, logger *slog.Logger) *Service {
-	return &Service{store: store, protector: protector, bus: bus, notify: notify, logger: logger}
+	return &Service{store: store, protector: protector, bus: bus, notify: notify, logger: logger, pending: map[string]context.CancelFunc{}}
 }
 func (s *Service) Start(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
@@ -53,10 +56,20 @@ func (s *Service) Start(parent context.Context) {
 			}
 		}
 	}()
+	go s.digestLoop(ctx)
 }
 func (s *Service) Stop() {
 	if s.cancel != nil {
 		s.cancel()
+	}
+}
+
+func (s *Service) cancelPending(userID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cancel := s.pending[userID]; cancel != nil {
+		cancel()
+		delete(s.pending, userID)
 	}
 }
 
@@ -67,6 +80,9 @@ func (s *Service) handle(ctx context.Context, event model.DomainEvent) {
 		state = "online"
 	case "vrc.friend-offline":
 		state = "offline"
+	case "vrc.friend-location":
+		s.handleLocation(ctx, event)
+		return
 	default:
 		return
 	}
@@ -99,23 +115,222 @@ func (s *Service) handle(ctx context.Context, event model.DomainEvent) {
 	if err != nil {
 		return
 	}
+	s.cancelPending(userID)
 	if (state == "online" && !rule.NotifyOnline) || (state == "offline" && !rule.NotifyOffline) {
 		return
 	}
 	if rule.DisplayName != "" {
 		name = rule.DisplayName
 	}
+	rule.DisplayName = name
+	if state == "online" && rule.MinOnlineSeconds > 0 {
+		pendingCtx, cancel := context.WithCancel(ctx)
+		s.mu.Lock()
+		s.pending[userID] = cancel
+		s.mu.Unlock()
+		go func() {
+			timer := time.NewTimer(time.Duration(rule.MinOnlineSeconds) * time.Second)
+			defer timer.Stop()
+			select {
+			case <-pendingCtx.Done():
+				return
+			case <-timer.C:
+			}
+			s.mu.Lock()
+			delete(s.pending, userID)
+			s.mu.Unlock()
+			s.dispatch(pendingCtx, accountID, rule, userID, "online", name+" 已持续在线")
+		}()
+		return
+	}
 	message := name + map[string]string{"online": " 已上线", "offline": " 已下线"}[state]
+	s.dispatch(ctx, accountID, rule, userID, state, message)
+}
+
+func (s *Service) dispatch(ctx context.Context, accountID string, rule model.PresenceWatchRule, userID, eventType, message string) {
+	if inQuietHours(rule, time.Now()) {
+		for _, channel := range []string{"desktop", "email"} {
+			if (channel == "desktop" && !rule.DesktopEnabled) || (channel == "email" && !rule.EmailEnabled) {
+				continue
+			}
+			_, _ = s.store.RecordNotificationDelivery(ctx, accountID, model.NotificationDelivery{UserID: userID, DisplayName: rule.DisplayName, EventType: eventType, Channel: channel, Status: "suppressed", Message: message, ObservedAt: time.Now().UTC(), Error: "免打扰时段"})
+		}
+		return
+	}
 	if rule.DesktopEnabled {
-		s.deliver(ctx, accountID, model.NotificationDelivery{UserID: userID, DisplayName: name, EventType: state, Channel: "desktop", Message: message, ObservedAt: event.ObservedAt}, func() error { return s.notify("好友动态", message) })
+		s.deliver(ctx, accountID, model.NotificationDelivery{UserID: userID, DisplayName: rule.DisplayName, EventType: eventType, Channel: "desktop", Message: message, ObservedAt: time.Now().UTC()}, func() error { return s.notify("好友动态", message) })
 	}
 	if rule.EmailEnabled {
+		if rule.EmailMode == "digest" {
+			_, _ = s.store.RecordNotificationDelivery(ctx, accountID, model.NotificationDelivery{UserID: userID, DisplayName: rule.DisplayName, EventType: eventType, Channel: "email", Status: "queued", Message: message, ObservedAt: time.Now().UTC()})
+			return
+		}
 		allowed, limitErr := s.store.EmailDeliveryAllowed(ctx, accountID, userID, time.Now().UTC())
 		if limitErr != nil || !allowed {
 			return
 		}
-		s.deliver(ctx, accountID, model.NotificationDelivery{UserID: userID, DisplayName: name, EventType: state, Channel: "email", Message: message, ObservedAt: event.ObservedAt}, func() error { return s.SendEmail(ctx, "VRC++ 好友动态", message) })
+		s.deliver(ctx, accountID, model.NotificationDelivery{UserID: userID, DisplayName: rule.DisplayName, EventType: eventType, Channel: "email", Message: message, ObservedAt: time.Now().UTC()}, func() error { return s.SendEmail(ctx, "VRC++ 好友动态", message) })
 	}
+}
+
+func (s *Service) handleLocation(ctx context.Context, event model.DomainEvent) {
+	var payload struct {
+		UserID      string                                     `json:"userId"`
+		ID          string                                     `json:"id"`
+		DisplayName string                                     `json:"displayName"`
+		Location    string                                     `json:"location"`
+		User        struct{ ID, DisplayName, Location string } `json:"user"`
+	}
+	if json.Unmarshal(event.Content, &payload) != nil {
+		return
+	}
+	userID := first(payload.UserID, payload.ID, payload.User.ID)
+	location := first(payload.Location, payload.User.Location)
+	if userID == "" || location == "" {
+		return
+	}
+	accountID, err := s.store.ActiveAccountID(ctx)
+	if err != nil {
+		return
+	}
+	previous, existed, err := s.store.UpdatePresenceLocation(ctx, accountID, userID, sanitizeLocation(location), event.ObservedAt)
+	if err != nil || !existed || previous == sanitizeLocation(location) {
+		return
+	}
+	rule, err := s.store.PresenceWatchRule(ctx, accountID, userID)
+	if err != nil {
+		return
+	}
+	name := first(rule.DisplayName, payload.DisplayName, payload.User.DisplayName, userID)
+	nowJoinable := joinableLocation(location)
+	wasJoinable := joinableLocation(previous)
+	if rule.NotifyJoinable && nowJoinable && !wasJoinable {
+		s.dispatch(ctx, accountID, rule, userID, "joinable", name+" 的位置现在可以加入")
+		return
+	}
+	if rule.NotifyLocation {
+		s.dispatch(ctx, accountID, rule, userID, "location", name+" 切换了世界")
+	}
+}
+
+func sanitizeLocation(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if i := strings.Index(value, ":"); i >= 0 {
+		return value[:i] + ":" + locationKind(value)
+	}
+	return value
+}
+func locationKind(value string) string {
+	lower := strings.ToLower(value)
+	for _, kind := range []string{"private", "hidden", "offline", "traveling", "friends+", "friends", "invite+", "invite", "public"} {
+		if strings.Contains(lower, kind) {
+			return kind
+		}
+	}
+	if strings.HasPrefix(lower, "wrld_") {
+		return "public"
+	}
+	return "unknown"
+}
+func joinableLocation(value string) bool {
+	kind := locationKind(value)
+	return kind == "public" || kind == "friends" || kind == "friends+"
+}
+
+func inQuietHours(rule model.PresenceWatchRule, now time.Time) bool {
+	parse := func(value string) (int, bool) {
+		parts := strings.Split(value, ":")
+		if len(parts) != 2 {
+			return 0, false
+		}
+		h, e1 := strconv.Atoi(parts[0])
+		m, e2 := strconv.Atoi(parts[1])
+		if e1 != nil || e2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+			return 0, false
+		}
+		return h*60 + m, true
+	}
+	start, ok1 := parse(rule.QuietStart)
+	end, ok2 := parse(rule.QuietEnd)
+	if !ok1 || !ok2 || start == end {
+		return false
+	}
+	minute := now.Hour()*60 + now.Minute()
+	if start < end {
+		return minute >= start && minute < end
+	}
+	return minute >= start || minute < end
+}
+
+func (s *Service) digestLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			s.flushDigest(ctx, now)
+		}
+	}
+}
+func (s *Service) flushDigest(ctx context.Context, now time.Time) {
+	accountID, err := s.store.ActiveAccountID(ctx)
+	if err != nil {
+		return
+	}
+	rules, err := s.store.ListPresenceWatchRules(ctx, accountID)
+	if err != nil {
+		return
+	}
+	eligible := map[string]bool{}
+	for _, rule := range rules {
+		if rule.EmailEnabled && rule.EmailMode == "digest" && rule.DigestHour == now.Hour() {
+			eligible[rule.UserID] = true
+		}
+	}
+	if len(eligible) == 0 {
+		return
+	}
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).UTC()
+	sent, err := s.store.DigestSentSince(ctx, accountID, start)
+	if err != nil || sent {
+		return
+	}
+	queued, err := s.store.ListQueuedNotificationDeliveries(ctx, accountID)
+	if err != nil {
+		return
+	}
+	items := []model.NotificationDelivery{}
+	for _, item := range queued {
+		if eligible[item.UserID] {
+			items = append(items, item)
+		}
+	}
+	if len(items) == 0 {
+		return
+	}
+	var body strings.Builder
+	body.WriteString("VRC++ 好友动态汇总\n\n")
+	for _, item := range items {
+		body.WriteString("• " + item.Message + " · " + item.ObservedAt.Local().Format("01-02 15:04") + "\n")
+	}
+	status := "sent"
+	errText := ""
+	sentAt := time.Now().UTC()
+	if err := s.SendEmail(ctx, "VRC++ 好友动态汇总", body.String()); err != nil {
+		status = "failed"
+		errText = err.Error()
+	}
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	_ = s.store.MarkNotificationDeliveries(ctx, ids, status, errText, &sentAt)
+	_, _ = s.store.RecordNotificationDelivery(ctx, accountID, model.NotificationDelivery{EventType: "digest", Channel: "email", Status: status, Message: fmt.Sprintf("汇总 %d 条好友动态", len(items)), ObservedAt: sentAt, SentAt: &sentAt, Error: errText})
 }
 func first(values ...string) string {
 	for _, v := range values {

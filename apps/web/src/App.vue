@@ -54,6 +54,7 @@ import {
   type FriendNetwork,
   type FavoriteGroup,
   type GameLogStatus,
+  type GuardianStatus,
   type Group,
   type GroupMember,
   type Instance,
@@ -85,6 +86,7 @@ import SystemCenter from "./SystemCenter.vue";
 import TodayView from "./TodayView.vue";
 import NotificationCenter from "./NotificationCenter.vue";
 import PresenceAlertsView from "./PresenceAlertsView.vue";
+import GuardianView from "./GuardianView.vue";
 import RecentAccess from "./RecentAccess.vue";
 import WorldDetailDrawer from "./WorldDetailDrawer.vue";
 import WorldMemory from "./WorldMemory.vue";
@@ -126,6 +128,7 @@ type View =
   | "friends"
   | "focus"
   | "alerts"
+  | "guardian"
   | "discovery"
   | "worlds"
   | "groups"
@@ -188,6 +191,9 @@ const worldFavoriteSaving = ref(false);
 const worldUpstreamSaving = ref(false);
 const inviteSending = ref(false);
 const gameLogStatus = ref<GameLogStatus>({ state: "starting", events: 0 });
+const guardianStatus = ref<GuardianStatus | null>(null);
+const guardianActing = ref(false);
+const guardianMessage = ref("");
 const updateStatus = ref<UpdateStatus>({ state: "idle", current: "" });
 const updateLoading = ref(false);
 const activityEvents = ref<ActivityEvent[]>([]);
@@ -227,6 +233,7 @@ let activityRefreshTimer: number | undefined;
 let friendDetailRequest = 0;
 let copyMessageTimer: number | undefined;
 let updateStatusTimer: number | undefined;
+let guardianStatusTimer: number | undefined;
 let networkScanCancelled = false;
 const worldHydrationAttempted = new Set<string>();
 
@@ -301,6 +308,9 @@ const selectedUpstreamFavorite = computed(() =>
 const unreadNotifications = computed(
   () => notifications.value.filter((item) => !item.seen).length,
 );
+const guardianNeedsAttention = computed(
+  () => guardianStatus.value?.state === "recovery" && !guardianStatus.value.dismissed,
+);
 const viewCopy = computed(
   () =>
     (locale.value === "en"
@@ -331,6 +341,7 @@ const viewCopy = computed(
             "Public profile, local evidence, worlds and observed relationships.",
           ],
           alerts: ["Alerts", "Presence alerts", "Desktop and email delivery."],
+          guardian: ["Guardian", "VRChat guardian", "Recover and continue your last session."],
           discovery: [
             "Strangers",
             "Stranger explorer",
@@ -374,6 +385,7 @@ const viewCopy = computed(
             "公开资料、本机证据、世界足迹与已观察关系。",
           ],
           alerts: ["提醒", "上线提醒", "托盘与邮件推送。"],
+          guardian: ["守护", "VRChat守护与续玩", "崩溃后回到刚才的房间。"],
           discovery: ["陌生人", "陌生人查看", "公开关系线索、群组与最近同房记录。"],
           network: ["关系网", "好友关系网", "看看好友圈与共同连接。"],
           worlds: ["世界", "世界与实例", "发现世界与可加入实例。"],
@@ -412,16 +424,19 @@ async function initialize() {
   error.value = "";
   try {
     bootstrap.value = await api.bootstrap();
-    const [diag, currentSession, networkResult] = await Promise.allSettled([
+    const [diag, currentSession, networkResult, guardianResult] = await Promise.allSettled([
       api.diagnostics(),
       api.session(),
       api.network(),
+      api.guardianStatus(),
     ]);
     if (diag.status === "fulfilled") diagnostics.value = diag.value;
     if (currentSession.status === "fulfilled")
       session.value = currentSession.value;
     if (networkResult.status === "fulfilled")
       setNetworkState(networkResult.value);
+    if (guardianResult.status === "fulfilled")
+      guardianStatus.value = guardianResult.value;
     if (session.value.status === "authenticated") await loadAppData();
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "本机网关连接失败";
@@ -464,6 +479,37 @@ function selectView(view: View) {
   if (view === "discovery")
     void loadActivity().then(() => bootstrapDiscovery());
   if (view === "notifications") void loadNotifications();
+  if (view === "guardian") void loadGuardianStatus();
+}
+
+async function loadGuardianStatus() {
+  try {
+    guardianStatus.value = await api.guardianStatus();
+  } catch {
+    /* keep the last known local guardian state */
+  }
+}
+
+async function resumeGuardianSession() {
+  guardianActing.value = true;
+  guardianMessage.value = "";
+  try {
+    await api.resumeGuardianSession();
+    guardianMessage.value = "已打开 VRChat 官方启动链接；受限实例仍以 VRChat 的实际访问权限为准。";
+  } catch (cause) {
+    guardianMessage.value = cause instanceof Error ? cause.message : "无法打开最后实例";
+  } finally {
+    guardianActing.value = false;
+    void loadGuardianStatus();
+  }
+}
+
+async function dismissGuardianRecovery() {
+  try {
+    guardianStatus.value = await api.dismissGuardianRecovery();
+  } catch (cause) {
+    guardianMessage.value = cause instanceof Error ? cause.message : "暂时无法忽略提醒";
+  }
 }
 
 async function bootstrapDiscovery() {
@@ -1768,6 +1814,9 @@ onMounted(() => {
         /* keep the last known status */
       });
   }, 30_000);
+  guardianStatusTimer = window.setInterval(() => {
+    void loadGuardianStatus();
+  }, 5_000);
 });
 watch(settingsOpen, (open) => {
   if (open) void refreshSystemCenter();
@@ -1784,6 +1833,7 @@ onBeforeUnmount(() => {
   window.clearTimeout(copyMessageTimer);
   window.clearTimeout(activityRefreshTimer);
   window.clearInterval(updateStatusTimer);
+  window.clearInterval(guardianStatusTimer);
 });
 </script>
 
@@ -2049,6 +2099,12 @@ onBeforeUnmount(() => {
           >
             <BellRing :size="19" /> {{ l("上线提醒", "Alerts") }}</button
           ><button
+            :class="{ active: activeView === 'guardian' }"
+            @click="selectView('guardian')"
+          >
+            <ShieldCheck :size="19" /> {{ l("守护续玩", "Guardian")
+            }}<span v-if="guardianNeedsAttention">!</span></button
+          ><button
             :class="{ active: activeView === 'discovery' }"
             @click="selectView('discovery')"
           >
@@ -2161,6 +2217,11 @@ onBeforeUnmount(() => {
         </header>
         <div v-if="error" class="error-banner">
           <CircleAlert :size="18" /> {{ error }}
+        </div>
+        <div v-if="guardianNeedsAttention && activeView !== 'guardian'" class="guardian-rescue-banner">
+          <ShieldCheck :size="19" />
+          <div><strong>VRChat 意外退出，最后现场已经保存</strong><small>{{ guardianStatus?.last?.worldName || guardianStatus?.last?.worldId }} · 实例 {{ guardianStatus?.last?.instanceId }}</small></div>
+          <button @click="selectView('guardian')">打开救援</button>
         </div>
         <section class="console-grid" :class="{ loading: dataLoading }">
           <TodayView
@@ -2321,6 +2382,15 @@ onBeforeUnmount(() => {
             @open-world="openNotificationWorld"
           />
           <PresenceAlertsView v-if="activeView === 'alerts'" :friends="friends?.items ?? []" />
+          <GuardianView
+            v-if="activeView === 'guardian'"
+            :status="guardianStatus"
+            :acting="guardianActing"
+            :message="guardianMessage"
+            @resume="resumeGuardianSession"
+            @dismiss="dismissGuardianRecovery"
+            @refresh="loadGuardianStatus"
+          />
           <GroupCenter
             v-if="activeView === 'groups'"
             :user-id="session.user?.id ?? ''"

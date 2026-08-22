@@ -184,7 +184,7 @@ func (w *Watcher) readFrom(ctx context.Context, path string, offset int64) (int6
 func ParseLine(file string, offset int64, line string) (model.DomainEvent, bool) {
 	line = strings.TrimSpace(line)
 	timestamp := parseTime(line)
-	typeName, displayName, userID, location, worldName := "", "", "", "", ""
+	typeName, displayName, userID, location, worldName, sensitiveLocation := "", "", "", "", "", ""
 	switch {
 	case strings.Contains(line, "[Behaviour] OnPlayerJoined") && !strings.Contains(line, "] OnPlayerJoined:"):
 		typeName = "game.player-joined"
@@ -197,7 +197,10 @@ func ParseLine(file string, offset int64, line string) (model.DomainEvent, bool)
 		worldName = after(line, "] Entering Room: ")
 	case strings.Contains(line, "[Behaviour] Joining ") && !strings.Contains(line, "Joining or Creating Room") && !strings.Contains(line, "Joining friend"):
 		typeName = "game.location"
-		location = sanitizeLocation(after(line, "] Joining "))
+		sensitiveLocation = strings.TrimSpace(after(line, "] Joining "))
+		location = sanitizeLocation(sensitiveLocation)
+	case strings.Contains(line, "VRCApplication: HandleApplicationQuit"):
+		typeName = "game.quit-clean"
 	default:
 		return model.DomainEvent{}, false
 	}
@@ -206,7 +209,7 @@ func ParseLine(file string, offset int64, line string) (model.DomainEvent, bool)
 	}
 	content, _ := json.Marshal(map[string]string{"displayName": displayName, "userId": userID, "location": location, "worldName": worldName})
 	digest := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%s", file, offset, typeName)))
-	return model.DomainEvent{ID: "log_" + hex.EncodeToString(digest[:10]), Type: typeName, ObservedAt: timestamp, Content: content}, true
+	return model.DomainEvent{ID: "log_" + hex.EncodeToString(digest[:10]), Type: typeName, ObservedAt: timestamp, Content: content, SensitiveLocation: sensitiveLocation}, true
 }
 
 func after(value, marker string) string {

@@ -21,6 +21,7 @@ import (
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/diagnostics"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/events"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/gamelog"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/guardian"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/media"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/pipeline"
@@ -40,6 +41,7 @@ type Config struct {
 	GameLog      *gamelog.Watcher
 	Updater      *updater.Service
 	Presence     *presence.Service
+	Guardian     *guardian.Service
 	Shutdown     chan struct{}
 }
 
@@ -55,6 +57,7 @@ type Server struct {
 	gameLog     *gamelog.Watcher
 	updater     *updater.Service
 	presence    *presence.Service
+	guardian    *guardian.Service
 	shutdown    chan struct{}
 	logger      *slog.Logger
 	static      http.Handler
@@ -77,6 +80,7 @@ func New(config Config, vrchatClient *vrchat.Client, diagnosticService *diagnost
 		gameLog:     config.GameLog,
 		updater:     config.Updater,
 		presence:    config.Presence,
+		guardian:    config.Guardian,
 		shutdown:    config.Shutdown,
 		logger:      logger,
 		static:      http.FileServer(http.FS(config.StaticFS)),
@@ -117,6 +121,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /local/v1/invites", s.sendInvite)
 	mux.HandleFunc("POST /local/v1/users/{userID}/boop", s.sendBoop)
 	mux.HandleFunc("GET /local/v1/game-log/status", s.getGameLogStatus)
+	mux.HandleFunc("GET /local/v1/guardian", s.getGuardianStatus)
+	mux.HandleFunc("POST /local/v1/guardian/resume", s.resumeGuardianSession)
+	mux.HandleFunc("POST /local/v1/guardian/dismiss", s.dismissGuardianRecovery)
 	mux.HandleFunc("GET /local/v1/update", s.getUpdateStatus)
 	mux.HandleFunc("POST /local/v1/update/check", s.checkUpdate)
 	mux.HandleFunc("POST /local/v1/update/download", s.downloadUpdate)

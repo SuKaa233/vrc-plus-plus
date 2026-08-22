@@ -21,6 +21,8 @@ describe('product insights', () => {
     const result = buildDailyBrief(friends, worlds, [], events, network, now)
     expect(result.length).toBeLessThanOrEqual(5)
     expect(result[0]).toMatchObject({ kind: 'gathering', worldId: 'wrld_a' })
+    expect(result[0].evidence.length).toBeGreaterThan(0)
+    expect(result[0].confidence).toBe('高')
   })
   it('filters a friend replay by period and preserves sources', () => {
     expect(buildFriendReplay(events, 'usr_a', worlds, 1, now)).toEqual(expect.arrayContaining([expect.objectContaining({ detail: 'Gallery', source: 'gameLog' })]))
@@ -29,7 +31,7 @@ describe('product insights', () => {
     expect(buildMovementChains(events, 1, now)[0]).toMatchObject({ fromWorldId: 'wrld_a', toWorldId: 'wrld_b', userIds: expect.arrayContaining(['usr_a', 'usr_b']) })
   })
   it('builds coverage and world memory without calling event counts visits', () => {
-    expect(buildCoverageMap(friends, events, network)[0].scanned).toBe(true)
+    expect(buildCoverageMap(friends, events, network).find(item=>item.userId==='usr_b')).toMatchObject({ scanned:true, observationDays:1, pipelineEvents:2, gameLogEvents:0 })
     expect(buildWorldMemories(events, worlds)[0]).toMatchObject({ name: 'Gallery', visitDays: 1, eventCount: 2 })
   })
   it('compares local network snapshots without claiming missing edges were removed upstream', () => {

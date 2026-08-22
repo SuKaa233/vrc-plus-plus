@@ -39,6 +39,27 @@ func TestSessionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPresenceWatchRuleV2RoundTrip(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "harbor.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	want := model.PresenceWatchRule{UserID: "usr_focus", DisplayName: "Focus", NotifyOnline: true, NotifyOffline: true, NotifyLocation: true, NotifyJoinable: true, DesktopEnabled: true, EmailEnabled: true, MinOnlineSeconds: 45, QuietStart: "23:00", QuietEnd: "08:00", EmailMode: "digest", DigestHour: 10}
+	if _, err := store.SavePresenceWatchRule(ctx, "usr_self", want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.PresenceWatchRule(ctx, "usr_self", want.UserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.NotifyLocation || !got.NotifyJoinable || got.MinOnlineSeconds != 45 || got.QuietStart != "23:00" || got.EmailMode != "digest" || got.DigestHour != 10 {
+		t.Fatalf("PresenceWatchRule() = %#v", got)
+	}
+}
+
 func TestCacheRoundTripAndExpiry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

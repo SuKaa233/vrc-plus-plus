@@ -20,6 +20,7 @@ import (
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/diagnostics"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/events"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/gamelog"
+	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/guardian"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/localapi"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/media"
 	"github.com/SuKaa233/vrc-plus-plus/apps/gateway/internal/model"
@@ -39,7 +40,7 @@ const (
 )
 
 var (
-	version           = "0.9.0-beta.21"
+	version           = "0.9.0-beta.23"
 	defaultUpdateURLs = ""
 )
 
@@ -92,6 +93,9 @@ func run() error {
 	diagnosticService := diagnostics.New(store, vrcClient)
 	eventBus := events.NewBus()
 	gameLogWatcher := gamelog.New(gamelog.DefaultDirectory(), eventBus, logger)
+	guardianService := guardian.New(filepath.Join(*dataDirectory, "guardian-state.dat"), protector, eventBus, openBrowser, tray.Notify, logger)
+	guardianService.Start(ctx)
+	defer guardianService.Stop()
 	gameLogWatcher.Start()
 	defer gameLogWatcher.Stop()
 	historyEvents, unsubscribeHistory := eventBus.Subscribe()
@@ -133,6 +137,7 @@ func run() error {
 		GameLog:      gameLogWatcher,
 		Updater:      updateService,
 		Presence:     presenceService,
+		Guardian:     guardianService,
 		Shutdown:     shutdownRequest,
 	}, vrcClient, diagnosticService, eventBus, pipelineManager, mediaService, logger)
 	if err != nil {

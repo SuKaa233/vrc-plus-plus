@@ -484,16 +484,26 @@ type DomainEvent struct {
 	Type       string          `json:"type"`
 	ObservedAt time.Time       `json:"observedAt"`
 	Content    json.RawMessage `json:"content,omitempty"`
+	// SensitiveLocation is carried only inside the local process. It may contain
+	// an instance nonce and must never be serialized to the browser or history.
+	SensitiveLocation string `json:"-"`
 }
 
 type PresenceWatchRule struct {
-	UserID         string    `json:"userId"`
-	DisplayName    string    `json:"displayName"`
-	NotifyOnline   bool      `json:"notifyOnline"`
-	NotifyOffline  bool      `json:"notifyOffline"`
-	DesktopEnabled bool      `json:"desktopEnabled"`
-	EmailEnabled   bool      `json:"emailEnabled"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	UserID           string    `json:"userId"`
+	DisplayName      string    `json:"displayName"`
+	NotifyOnline     bool      `json:"notifyOnline"`
+	NotifyOffline    bool      `json:"notifyOffline"`
+	NotifyLocation   bool      `json:"notifyLocation"`
+	NotifyJoinable   bool      `json:"notifyJoinable"`
+	DesktopEnabled   bool      `json:"desktopEnabled"`
+	EmailEnabled     bool      `json:"emailEnabled"`
+	MinOnlineSeconds int       `json:"minOnlineSeconds"`
+	QuietStart       string    `json:"quietStart,omitempty"`
+	QuietEnd         string    `json:"quietEnd,omitempty"`
+	EmailMode        string    `json:"emailMode"`
+	DigestHour       int       `json:"digestHour"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 type EmailSettings struct {

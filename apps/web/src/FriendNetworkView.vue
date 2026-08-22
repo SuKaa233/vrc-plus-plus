@@ -21,7 +21,7 @@ import {
   X,
 } from '@lucide/vue'
 import type { FriendAnnotation, FriendNetwork, FriendNetworkNode } from './api'
-import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, expandNetworkAvatarBudget, findShortestNetworkPath, layoutFriendNetwork, networkEdgeKey, rankBridgeNodes, selectCommunityTheme, selectNetworkRenderEdges, toggleElementFullscreen, zoomAroundPoint, type FriendNetworkSnapshot } from './friend-network'
+import { applyManualNetworkPositions, buildNetworkFocusIndex, compareCommunityMembers, compareNetworkSnapshots, detectNetworkCommunities, expandNetworkAvatarBudget, findShortestNetworkPath, layoutFriendNetwork, networkEdgeKey, rankBridgeNodes, selectCommunityTheme, selectNetworkRenderEdges, toggleElementFullscreen, zoomAroundPoint, type FriendNetworkSnapshot, type PositionedNetworkNode } from './friend-network'
 import { preferredFriendAvatar } from './media'
 
 const props = defineProps<{
@@ -70,6 +70,7 @@ const pickedIDs = ref<Set<string>>(new Set())
 const pinnedIDs = ref<Set<string>>(new Set())
 const graphShellRef = ref<HTMLElement | null>(null)
 const svgRef = ref<SVGSVGElement | null>(null)
+const canvasRef = ref<HTMLCanvasElement | null>(null)
 const fullscreen = ref(false)
 const zoom = ref(1)
 const panX = ref(0)
@@ -77,6 +78,8 @@ const panY = ref(0)
 const manualPositions = ref<Record<string, { x: number; y: number }>>({})
 const avatarFailures = ref<Set<string>>(new Set())
 const avatarBudget = ref(72)
+const graphFPS = ref(60)
+const graphLongTasks = ref(0)
 const interaction = ref<null | {
   mode: 'pan' | 'node'
   pointerID: number
@@ -98,6 +101,14 @@ let hoverSwitchTimer: number | undefined
 let hoverCandidateID = ''
 let pointerFrame: number | undefined
 let avatarExpansionTimer: number | undefined
+let canvasFrame: number | undefined
+let nodeClickTimer: number | undefined
+let layoutWorker: Worker | undefined
+let layoutRequestID = 0
+let fpsFrame: number | undefined
+let fpsStarted = 0
+let fpsFrames = 0
+let longTaskObserver: PerformanceObserver | undefined
 let pendingPointer: { clientX: number; clientY: number } | null = null
 const edgeElements = new Map<string, SVGLineElement>()
 let highlightedEdgeKeys: string[] = []
@@ -194,13 +205,16 @@ const graphSize = computed(() => {
   return { width, height: Math.max(680, Math.round(width * .62)) }
 })
 
-// The expensive force layout only depends on graph data. Pointer movement never reruns it.
-const automaticPositions = computed(() => layoutFriendNetwork(
-  visibleNodes.value,
-  structuralEdges.value,
-  graphSize.value.width,
-  graphSize.value.height,
-))
+// Large force layouts run outside the UI thread. Pointer movement only changes
+// the viewport and never restarts layout work.
+const automaticPositions = ref<PositionedNetworkNode[]>([])
+function requestAutomaticLayout() {
+  const id=++layoutRequestID,nodes=visibleNodes.value,edges=structuralEdges.value,size=graphSize.value
+  if(!largeGraph.value){automaticPositions.value=layoutFriendNetwork(nodes,edges,size.width,size.height);return}
+  if(!layoutWorker){layoutWorker=new Worker(new URL('./friend-network.worker.ts',import.meta.url),{type:'module'});layoutWorker.onmessage=(event:MessageEvent<{id:number;positions:PositionedNetworkNode[]}>)=>{if(event.data.id===layoutRequestID)automaticPositions.value=event.data.positions};layoutWorker.onerror=()=>{layoutWorker?.terminate();layoutWorker=undefined;automaticPositions.value=layoutFriendNetwork(visibleNodes.value,structuralEdges.value,graphSize.value.width,graphSize.value.height)}}
+  layoutWorker.postMessage({id,nodes,edges,width:size.width,height:size.height})
+}
+watch([visibleNodes,structuralEdges,graphSize],requestAutomaticLayout,{immediate:true})
 
 const rawPositioned = computed(() => automaticPositions.value.map((node) => {
   const manual = manualPositions.value[node.id]
@@ -232,6 +246,13 @@ const pathEdgeKeys = computed(() => new Set(path.value.slice(1).map((id, index) 
   const source = path.value[index]
   return networkEdgeKey({ source, target: id })
 })))
+const renderedNodes = computed(() => {
+  if(!largeGraph.value || zoom.value>=1.15)return positioned.value
+  const budget=zoom.value<.62?220:360,result=new Set<string>([...pinnedIDs.value,...pathIDs.value])
+  if(focusedID.value){result.add(focusedID.value);for(const id of focusIndex.value.get(focusedID.value)?.neighbors??[])result.add(id)}
+  ;[...positioned.value].sort((a,b)=>(degrees.value.get(b.id)??0)-(degrees.value.get(a.id)??0)||a.id.localeCompare(b.id)).slice(0,budget).forEach(node=>result.add(node.id))
+  return positioned.value.filter(node=>result.has(node.id))
+})
 const renderedEdges = computed(() => {
   if (!largeGraph.value || edgeRenderMode.value === 'all') return visibleEdges.value
   return selectNetworkRenderEdges(visibleEdges.value, edgeBudget.value, focusedID.value, pathEdgeKeys.value)
@@ -359,6 +380,7 @@ function applyEdgeHighlights(userID: string) {
   for (const key of highlightedEdgeKeys) edgeElements.get(key)?.classList.remove('highlighted')
   highlightedEdgeKeys = userID ? (focusIndex.value.get(userID)?.edgeKeys ?? []) : []
   for (const key of highlightedEdgeKeys) edgeElements.get(key)?.classList.add('highlighted')
+  scheduleCanvasDraw()
 }
 
 function applyNodeHighlights(userID: string) {
@@ -384,6 +406,27 @@ function applyPathHighlights() {
   for (const key of renderedPathEdgeKeys) edgeElements.get(key)?.classList.remove('path-edge')
   renderedPathEdgeKeys = [...pathEdgeKeys.value]
   for (const key of renderedPathEdgeKeys) edgeElements.get(key)?.classList.add('path-edge')
+  scheduleCanvasDraw()
+}
+
+function scheduleCanvasDraw() {
+  if (!largeGraph.value || canvasFrame !== undefined) return
+  canvasFrame = window.requestAnimationFrame(() => { canvasFrame = undefined; drawCanvasEdges() })
+}
+
+function sampleGraphFPS(now:number){if(!fpsStarted)fpsStarted=now;fpsFrames+=1;if(now-fpsStarted>=2000){graphFPS.value=Math.round(fpsFrames*1000/(now-fpsStarted));fpsFrames=0;fpsStarted=now}fpsFrame=window.requestAnimationFrame(sampleGraphFPS)}
+
+function drawCanvasEdges() {
+  const canvas=canvasRef.value;if(!canvas||!largeGraph.value)return
+  const dpr=Math.min(window.devicePixelRatio||1,2),width=graphSize.value.width,height=graphSize.value.height
+  const pixelWidth=Math.round(width*dpr),pixelHeight=Math.round(height*dpr);if(canvas.width!==pixelWidth)canvas.width=pixelWidth;if(canvas.height!==pixelHeight)canvas.height=pixelHeight
+  const context=canvas.getContext('2d');if(!context)return;context.setTransform(dpr,0,0,dpr,0,0);context.clearRect(0,0,width,height);context.translate(panX.value,panY.value);context.scale(zoom.value,zoom.value)
+  const styles=getComputedStyle(canvas),base=styles.getPropertyValue('--line-strong').trim()||'#777',accent=styles.getPropertyValue('--accent').trim()||'#b7895f',warning=styles.getPropertyValue('--warning').trim()||'#d59a45',focusKeys=new Set(highlightedEdgeKeys)
+  const paint=(edges:typeof renderedEdges.value,color:string,alpha:number,lineWidth:number)=>{context.beginPath();context.strokeStyle=color;context.globalAlpha=alpha;context.lineWidth=lineWidth/zoom.value;for(const edge of edges){const a=positions.value.get(edge.source),b=positions.value.get(edge.target);if(!a||!b)continue;context.moveTo(a.x,a.y);context.lineTo(b.x,b.y)}context.stroke()}
+  paint(renderedEdges.value.filter(edge=>!focusKeys.has(networkEdgeKey(edge))&&!pathEdgeKeys.value.has(networkEdgeKey(edge))),base,focusedID.value?.06:.19,1.05)
+  if(focusKeys.size)paint(renderedEdges.value.filter(edge=>focusKeys.has(networkEdgeKey(edge))),accent,.92,2)
+  if(pathEdgeKeys.value.size)paint(renderedEdges.value.filter(edge=>pathEdgeKeys.value.has(networkEdgeKey(edge))),warning,1,2.6)
+  context.globalAlpha=1
 }
 
 function rebuildEdgeElementIndex() {
@@ -400,7 +443,8 @@ function rebuildEdgeElementIndex() {
   applyPathHighlights()
 }
 
-watch([renderedEdges, visibleNodes], () => { void nextTick(rebuildEdgeElementIndex) })
+watch([renderedEdges, visibleNodes], () => { void nextTick(()=>{rebuildEdgeElementIndex();scheduleCanvasDraw()}) })
+watch([positions, zoom, panX, panY, largeGraph], scheduleCanvasDraw, { deep:true, flush:'post' })
 watch([visibleNodes, largeGraph, () => props.layoutKey], scheduleAvatarExpansion, { immediate: true, flush: 'post' })
 watch(visibleIDs, (ids) => {
   if (hoveredID.value && !ids.has(hoveredID.value)) clearTransientFocus()
@@ -418,6 +462,9 @@ onMounted(() => {
   window.addEventListener('blur', clearTransientFocus)
   window.addEventListener('keydown', handleGlobalKeydown)
   void nextTick(rebuildEdgeElementIndex)
+  void nextTick(scheduleCanvasDraw)
+  fpsFrame=window.requestAnimationFrame(sampleGraphFPS)
+  if('PerformanceObserver'in window){try{longTaskObserver=new PerformanceObserver(list=>{graphLongTasks.value+=list.getEntries().length});longTaskObserver.observe({entryTypes:['longtask']})}catch{/* Chromium may disable long-task entries */}}
 })
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', syncFullscreen)
@@ -429,6 +476,11 @@ onBeforeUnmount(() => {
   window.clearTimeout(hoverSwitchTimer)
   window.clearTimeout(avatarExpansionTimer)
   if (pointerFrame !== undefined) window.cancelAnimationFrame(pointerFrame)
+  if (canvasFrame !== undefined) window.cancelAnimationFrame(canvasFrame)
+  window.clearTimeout(nodeClickTimer)
+  layoutWorker?.terminate()
+  if(fpsFrame!==undefined)window.cancelAnimationFrame(fpsFrame)
+  longTaskObserver?.disconnect()
   edgeElements.clear()
   nodeElements.clear()
 })
@@ -485,7 +537,12 @@ function toggleEdgeRenderMode() {
 
 function selectNode(userID: string) {
   if (suppressClickID === userID) return
-  selectedID.value = userID
+  window.clearTimeout(nodeClickTimer)
+  nodeClickTimer = window.setTimeout(() => { selectedID.value = selectedID.value === userID ? '' : userID }, 220)
+}
+
+function openNode(userID: string) {
+  window.clearTimeout(nodeClickTimer)
   emit('openFriend', userID)
 }
 
@@ -738,7 +795,7 @@ function addPicked(scan: boolean) {
 
     <div v-if="largeGraph && edgeRenderMode === 'smart'" class="graph-performance-note">
       <ShieldCheck :size="14" />
-      <span><b>大图流畅模式</b>：完整保留 {{ visibleEdges.length }} 条关系用于搜索、寻路和统计；画布当前绘制 {{ renderedEdges.length }} 条代表连线。头像正在分批加载 {{ avatarEligibleIDs.size }}/{{ visibleNodes.length }}，悬停好友会优先加载其头像和直接关系。</span>
+      <span><b>大图流畅模式</b>：完整保留 {{ visibleEdges.length }} 条关系用于搜索、寻路和统计；后台 Worker 布局、Canvas {{ renderedEdges.length }} 条线、语义缩放 {{ renderedNodes.length }}/{{ visibleNodes.length }} 个节点。当前约 {{ graphFPS }} FPS，本次打开记录 {{ graphLongTasks }} 个长任务。</span>
     </div>
 
     <section v-if="evolutionOpen" class="evolution-panel">
@@ -784,16 +841,17 @@ function addPicked(scan: boolean) {
             <Minimize2 v-if="fullscreen" :size="16" /><Maximize2 v-else :size="16" />
           </button>
         </div>
-        <div class="graph-hint"><Move :size="14" />拖动 · 滚轮缩放</div>
+        <div class="graph-hint"><Move :size="14" />拖动 · 滚轮缩放 · 单击锁定 · 双击档案</div>
+        <canvas v-if="largeGraph" ref="canvasRef" class="graph-edge-canvas" :aria-label="`${renderedEdges.length} 条关系连线 Canvas 层`"></canvas>
         <svg ref="svgRef" :viewBox="`0 0 ${graphSize.width} ${graphSize.height}`" role="img" aria-label="共同好友关系图"
           @wheel.prevent="handleWheel" @pointerdown="beginPan" @pointermove="movePointer"
           @pointerup="endPointer" @pointercancel="endPointer">
           <g class="graph-viewport" :transform="`translate(${panX} ${panY}) scale(${zoom})`">
-            <line v-for="edge in renderedEdges" :key="`${edge.source}-${edge.target}`" class="network-edge" :data-edge-key="networkEdgeKey(edge)"
+            <line v-for="edge in (largeGraph ? [] : renderedEdges)" :key="`${edge.source}-${edge.target}`" class="network-edge" :data-edge-key="networkEdgeKey(edge)"
               :x1="positions.get(edge.source)?.x" :y1="positions.get(edge.source)?.y"
               :x2="positions.get(edge.target)?.x" :y2="positions.get(edge.target)?.y"
             />
-            <g v-for="node in positioned" :key="node.id" class="graph-node"
+            <g v-for="node in renderedNodes" :key="node.id" class="graph-node"
               :data-node-id="node.id"
               :class="{
                 'ambient-label': ambientLabelIDs.has(node.id),
@@ -805,7 +863,7 @@ function addPicked(scan: boolean) {
               }"
               :transform="`translate(${node.x} ${node.y})`" tabindex="0"
               @pointerdown="beginNodeDrag($event, node.id)" @pointerenter="enterNode(node.id)" @pointerleave="leaveNode(node.id)"
-              @focus="enterNode(node.id)" @blur="leaveNode(node.id)" @click="selectNode(node.id)" @keydown.enter="selectNode(node.id)">
+              @focus="enterNode(node.id)" @blur="leaveNode(node.id)" @click="selectNode(node.id)" @dblclick.stop="openNode(node.id)" @keydown.enter="selectNode(node.id)">
               <title>{{ node.displayName }} · {{ node.degree }} 条连接</title>
               <circle class="node-hit-target" :r="node.radius + 7" />
               <circle class="node-focus-halo" :r="node.radius + 9" />
@@ -893,4 +951,5 @@ line{stroke:var(--line-strong);stroke-width:1.1;opacity:.2;vector-effect:non-sca
 @media(prefers-reduced-motion:reduce){line,.graph-node,.scan-progress i{transition:none}}
 @media(max-width:900px){.network-header{align-items:flex-start}.network-title p{display:none}.network-summary-row{gap:10px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}.scan-estimate{width:100%;margin-left:0;text-align:left}.network-toolbar,.path-toolbar{flex-wrap:wrap}.network-search{width:100%}.path-toolbar small{width:100%}.visible-count{margin-left:0}.evolution-panel{grid-template-columns:1fr}.graph-stage,.network-empty{min-height:520px;height:62vh}}
 @media(max-width:620px){.network-header{flex-direction:column;align-items:stretch}.network-actions button{flex:1;justify-content:center}.network-summary-row span:nth-child(2){display:none}.network-toolbar>button{flex:1;justify-content:center}.visible-count{width:100%}.graph-controls{top:8px;right:8px}.graph-hint{display:none}.picker-footer{grid-template-columns:1fr 1fr}.picker-footer span{grid-column:1/-1}.network-boundary{padding:10px 12px}}
+.graph-stage>svg{position:relative;z-index:1}.graph-edge-canvas{position:absolute;z-index:0;inset:0;width:100%;height:100%;pointer-events:none}
 </style>
