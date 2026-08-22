@@ -3,11 +3,15 @@ import { computed, ref, watch } from 'vue'
 import { Activity, BellRing, Clock3, ExternalLink, MapPin, RotateCcw, Route, ShieldCheck, Square, Users, X } from '@lucide/vue'
 import type { GuardianSession, GuardianStatus } from './api'
 
-const props = defineProps<{ status:GuardianStatus|null; acting:boolean; message?:string }>()
-const emit = defineEmits<{ resume:[]; dismiss:[]; refresh:[]; startSlotWatch:[location:string]; stopSlotWatch:[]; startMigrationWatch:[]; stopMigrationWatch:[]; openLocation:[location:string] }>()
+type SlotCandidate = { location:string; worldName:string; source:'current'|'recent'|'friends'; people:string[] }
+const props = defineProps<{ status:GuardianStatus|null; acting:boolean; message?:string; slotCandidates:SlotCandidate[] }>()
+const emit = defineEmits<{ resume:[]; dismiss:[]; refresh:[]; startSlotWatch:[location:string,worldName:string]; stopSlotWatch:[]; startMigrationWatch:[]; stopMigrationWatch:[]; openLocation:[location:string] }>()
 const session = computed<GuardianSession|undefined>(() => props.status?.current || props.status?.last)
-const locationInput = ref('')
-watch(session, value => { if (!locationInput.value && value?.location) locationInput.value = value.location }, { immediate:true })
+const selectedLocation = ref('')
+watch(() => props.slotCandidates, value => {
+  if (!value.some(item => item.location === selectedLocation.value)) selectedLocation.value = value[0]?.location || ''
+}, { immediate:true, deep:true })
+const selectedCandidate = computed(() => props.slotCandidates.find(item => item.location === selectedLocation.value))
 const stateLabel = computed(() => ({ protecting:'守护中', recovery:'等待救援', ready:'可以续玩', idle:'等待游戏' })[props.status?.state || 'idle'])
 function dateTime(value?:string){return value?new Date(value).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}
 function kindLabel(value?:string){return ({public:'公开',friends:'好友',friends_plus:'好友+',invite:'邀请',invite_plus:'邀请+',group:'群组'} as Record<string,string>)[value||'']||'实例'}
@@ -44,7 +48,14 @@ function peopleText(value:Array<{displayName:string}>){ return value.map(person=
           <div class="guardian-tool-meta"><span>上次检查 {{ dateTime(status.slotWatch.lastCheckedAt) }}</span><span>结束时间 {{ dateTime(status.slotWatch.expiresAt) }}</span></div>
           <div class="guardian-tool-actions"><button v-if="status.slotWatch.state==='available'" class="primary" :disabled="acting" @click="emit('openLocation',status.slotWatch.location)"><ExternalLink :size="15"/>进入该实例</button><button class="quiet guardian-stop" @click="emit('stopSlotWatch')"><Square :size="15"/>停止提醒</button></div>
         </template>
-        <template v-else><label class="guardian-location"><span>实例地址</span><input v-model.trim="locationInput" placeholder="wrld_xxx:12345~region(jp)"/></label><button class="primary guardian-action" :disabled="acting||!locationInput" @click="emit('startSlotWatch',locationInput)"><BellRing :size="16"/>开启两小时提醒</button></template>
+        <template v-else>
+          <div v-if="slotCandidates.length" class="guardian-slot-picker">
+            <label><span>选择要蹲守的房间</span><select v-model="selectedLocation"><option v-for="item in slotCandidates" :key="item.location" :value="item.location">{{ item.worldName }}{{ item.people.length ? ` · ${item.people.length} 位好友在场` : item.source==='current' ? ' · 当前房间' : ' · 最近房间' }}</option></select></label>
+            <div v-if="selectedCandidate" class="guardian-slot-preview"><MapPin :size="16"/><span><strong>{{ selectedCandidate.worldName }}</strong><small v-if="selectedCandidate.people.length">{{ selectedCandidate.people.slice(0,5).join('、') }}<template v-if="selectedCandidate.people.length>5"> 等 {{ selectedCandidate.people.length }} 人</template></small><small v-else>{{ selectedCandidate.source==='current'?'你现在所在的实例':'你最近离开的实例' }}</small></span></div>
+          </div>
+          <div v-else class="guardian-tool-ready"><Users :size="18"/><span>进入一个世界，或等待好友公开可见位置后，这里会自动列出可蹲守的房间。</span></div>
+          <button class="primary guardian-action" :disabled="acting||!selectedCandidate" @click="selectedCandidate&&emit('startSlotWatch',selectedCandidate.location,selectedCandidate.worldName)"><BellRing :size="16"/>开启两小时提醒</button>
+        </template>
       </article>
 
       <article class="guardian-tool panel">

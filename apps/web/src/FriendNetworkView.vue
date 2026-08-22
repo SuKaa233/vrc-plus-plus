@@ -795,7 +795,7 @@ function addPicked(scan: boolean) {
 
     <div v-if="largeGraph && edgeRenderMode === 'smart'" class="graph-performance-note">
       <ShieldCheck :size="14" />
-      <span><b>大图流畅模式</b>：完整保留 {{ visibleEdges.length }} 条关系用于搜索、寻路和统计；后台 Worker 布局、Canvas {{ renderedEdges.length }} 条线、语义缩放 {{ renderedNodes.length }}/{{ visibleNodes.length }} 个节点。当前约 {{ graphFPS }} FPS，本次打开记录 {{ graphLongTasks }} 个长任务。</span>
+      <span><b>大图流畅模式</b>：完整保留 {{ visibleEdges.length }} 条关系用于搜索、寻路和统计；后台 Worker 布局、显示 {{ renderedEdges.length }} 条关键连线、语义缩放 {{ renderedNodes.length }}/{{ visibleNodes.length }} 个节点。当前约 {{ graphFPS }} FPS，本次打开记录 {{ graphLongTasks }} 个长任务。</span>
     </div>
 
     <section v-if="evolutionOpen" class="evolution-panel">
@@ -842,12 +842,11 @@ function addPicked(scan: boolean) {
           </button>
         </div>
         <div class="graph-hint"><Move :size="14" />拖动 · 滚轮缩放 · 单击锁定 · 双击档案</div>
-        <canvas v-if="largeGraph" ref="canvasRef" class="graph-edge-canvas" :aria-label="`${renderedEdges.length} 条关系连线 Canvas 层`"></canvas>
         <svg ref="svgRef" :viewBox="`0 0 ${graphSize.width} ${graphSize.height}`" role="img" aria-label="共同好友关系图"
           @wheel.prevent="handleWheel" @pointerdown="beginPan" @pointermove="movePointer"
           @pointerup="endPointer" @pointercancel="endPointer">
           <g class="graph-viewport" :transform="`translate(${panX} ${panY}) scale(${zoom})`">
-            <line v-for="edge in (largeGraph ? [] : renderedEdges)" :key="`${edge.source}-${edge.target}`" class="network-edge" :data-edge-key="networkEdgeKey(edge)"
+            <line v-for="edge in renderedEdges" :key="`${edge.source}-${edge.target}`" class="network-edge" :data-edge-key="networkEdgeKey(edge)"
               :x1="positions.get(edge.source)?.x" :y1="positions.get(edge.source)?.y"
               :x2="positions.get(edge.target)?.x" :y2="positions.get(edge.target)?.y"
             />

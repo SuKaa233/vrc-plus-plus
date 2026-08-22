@@ -122,6 +122,7 @@ const friends = ref<DataEnvelope<Friend> | null>(null);
 const worlds = ref<DataEnvelope<World> | null>(null);
 const realtime = ref<RealtimeStatus>({ state: "disabled", reconnects: 0 });
 const dataLoading = ref(false);
+const compassLoading = ref(false);
 const worldSearch = ref("");
 type View =
   | "overview"
@@ -291,6 +292,28 @@ const visibleWorlds = computed(() => {
 const compassFavoriteIDs = computed(() => [
   ...new Set([...Object.keys(worldFavorites.value), ...Object.keys(upstreamWorldFavorites.value)]),
 ]);
+type GuardianSlotCandidate = { location:string; worldName:string; source:'current'|'recent'|'friends'; people:string[] };
+const guardianSlotCandidates = computed<GuardianSlotCandidate[]>(() => {
+  const worldNames = new Map(visibleWorlds.value.map((world) => [world.id, world.name]));
+  const candidates = new Map<string, GuardianSlotCandidate>();
+  const addSession = (value: GuardianStatus["current"] | GuardianStatus["last"], source:'current'|'recent') => {
+    if (!value?.location?.startsWith("wrld_")) return;
+    candidates.set(value.location, { location:value.location, worldName:value.worldName || worldNames.get(value.worldId) || "最近访问的世界", source, people:[] });
+  };
+  addSession(guardianStatus.value?.last, 'recent');
+  addSession(guardianStatus.value?.current, 'current');
+  for (const friend of friends.value?.items ?? []) {
+    if (!friend.location?.startsWith("wrld_")) continue;
+    const worldID = friend.location.split(":")[0];
+    const existing = candidates.get(friend.location);
+    if (existing) existing.people.push(friend.displayName);
+    else candidates.set(friend.location, { location:friend.location, worldName:worldNames.get(worldID) || `${friend.displayName} 所在世界`, source:'friends', people:[friend.displayName] });
+  }
+  return [...candidates.values()].sort((left,right) => {
+    const priority = { current:0, recent:1, friends:2 };
+    return priority[left.source]-priority[right.source] || right.people.length-left.people.length || left.worldName.localeCompare(right.worldName);
+  }).slice(0, 40);
+});
 const showFriends = computed(() => false);
 const showWorlds = computed(() => activeView.value === "worlds");
 const selectedAnnotation = computed(() =>
@@ -478,7 +501,7 @@ function selectView(view: View) {
   activeView.value = view;
   if (view === "network" || view === "journey" || view === "focus")
     void loadFriendNetwork();
-  if (view === "compass") void refreshCompassData();
+  if (view === "compass") void refreshCompassData(false);
   if (view === "journey") void refreshSystemCenter();
   if (view === "activity" || view === "focus") void loadActivity();
   if (view === "discovery")
@@ -517,11 +540,11 @@ async function dismissGuardianRecovery() {
   }
 }
 
-async function startGuardianSlotWatch(location:string) {
+async function startGuardianSlotWatch(location:string, worldName:string) {
   guardianActing.value = true;
   guardianMessage.value = "";
   try {
-    guardianStatus.value = await api.startGuardianSlotWatch(location, guardianStatus.value?.current?.worldName || guardianStatus.value?.last?.worldName || "");
+    guardianStatus.value = await api.startGuardianSlotWatch(location, worldName);
     guardianMessage.value = "空位提醒已开启；出现空位时会通过系统托盘通知。";
   } catch (cause) {
     guardianMessage.value = cause instanceof Error ? cause.message : "无法开启空位提醒";
@@ -1270,8 +1293,8 @@ async function loadActivity() {
   activityLoading.value = false;
 }
 
-async function refreshCompassData() {
-  dataLoading.value = true;
+async function refreshCompassData(showLoading = true) {
+  if (showLoading) compassLoading.value = true;
   error.value = "";
   const results = await Promise.allSettled([
     api.friends().then((value) => { friends.value = value; }),
@@ -1282,9 +1305,9 @@ async function refreshCompassData() {
     api.upstreamWorldFavorites().then((value) => { upstreamWorldFavorites.value = Object.fromEntries(value.map((item) => [item.world.id, item])); }),
   ]);
   const eventWorldIDs = activityEvents.value.map((item) => item.worldId || (item.location?.startsWith("wrld_") ? item.location.split(":")[0] : "")).filter(Boolean);
-  await hydrateVisibleWorlds(eventWorldIDs);
+  void hydrateVisibleWorlds(eventWorldIDs);
   if (results.every((item) => item.status === "rejected")) error.value = "罗盘数据刷新失败，请检查网络与本机日志状态";
-  dataLoading.value = false;
+  if (showLoading) compassLoading.value = false;
 }
 
 async function clearActivity() {
@@ -2298,7 +2321,7 @@ onBeforeUnmount(() => {
             :storage-key="session.user?.id ?? 'default'"
             :realtime-label="realtimeLabel"
             :route-label="network.label"
-            :loading="dataLoading"
+            :loading="compassLoading"
             @open-friend="openNetworkFriend"
             @open-world="openCompassWorld"
             @load-network="loadFriendNetwork"
@@ -2436,6 +2459,7 @@ onBeforeUnmount(() => {
             :status="guardianStatus"
             :acting="guardianActing"
             :message="guardianMessage"
+            :slot-candidates="guardianSlotCandidates"
             @resume="resumeGuardianSession"
             @dismiss="dismissGuardianRecovery"
             @refresh="loadGuardianStatus"
