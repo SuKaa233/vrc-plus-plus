@@ -13,7 +13,12 @@
 
 #define AppName "VRC++"
 #define AppExeName "vrc-plus-plus.exe"
-#define AppId "{{9D6584CB-59EC-4EC2-80EC-E95B14BD1A5D}"
+#ifndef AppId
+  #define AppId "{{9D6584CB-59EC-4EC2-80EC-E95B14BD1A5D}"
+#endif
+#ifndef UninstallKeyName
+  #define UninstallKeyName "{9D6584CB-59EC-4EC2-80EC-E95B14BD1A5D}_is1"
+#endif
 
 [Setup]
 AppId={#AppId}
@@ -22,7 +27,7 @@ AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=VRC++
 AppSupportURL=mailto:2579362548@qq.com
-DefaultDirName={localappdata}\Programs\VRC++
+DefaultDirName={code:GetInstallDirectory}
 DefaultGroupName=VRC++
 DisableDirPage=no
 UsePreviousAppDir=yes
@@ -76,9 +81,65 @@ Filename: "{app}\{#AppExeName}"; Description: "启动 VRC++"; Flags: nowait post
 Filename: "{cmd}"; Parameters: "/C taskkill /IM {#AppExeName} /F"; Flags: runhidden; RunOnceId: "StopVRCPlusPlus"
 
 [Code]
+const
+  VRCPlusPlusUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#UninstallKeyName}';
+
+var
+  UpgradeDetected: Boolean;
+  InstalledVersion: String;
+  InstalledDirectory: String;
+
+function ReadInstalledApplication(const RootKey: Integer): Boolean;
+begin
+  Result := RegQueryStringValue(RootKey, VRCPlusPlusUninstallKey,
+    'DisplayVersion', InstalledVersion);
+  if Result then
+    RegQueryStringValue(RootKey, VRCPlusPlusUninstallKey,
+      'InstallLocation', InstalledDirectory);
+end;
+
+function DetectInstalledApplication(): Boolean;
+begin
+  InstalledVersion := '';
+  InstalledDirectory := '';
+  Result := ReadInstalledApplication(HKCU);
+  if not Result then
+    Result := ReadInstalledApplication(HKLM);
+end;
+
 function InitializeSetup(): Boolean;
 begin
+  UpgradeDetected := DetectInstalledApplication();
   Result := True;
+end;
+
+function GetInstallDirectory(Param: String): String;
+begin
+  if UpgradeDetected and (InstalledDirectory <> '') then
+    Result := RemoveBackslashUnlessRoot(InstalledDirectory)
+  else
+    Result := ExpandConstant('{localappdata}\Programs\VRC++');
+end;
+
+procedure InitializeWizard();
+var
+  UpgradePage: TOutputMsgWizardPage;
+begin
+  if UpgradeDetected then
+  begin
+    UpgradePage := CreateOutputMsgPage(wpWelcome,
+      '检测到已安装的 VRC++',
+      '安装程序将执行原位覆盖升级',
+      '已安装版本：' + InstalledVersion + #13#10 +
+      '升级版本：{#AppVersion}' + #13#10 +
+      '原安装目录：' + InstalledDirectory + #13#10#13#10 +
+      '程序文件会被新版本覆盖；好友记录、登录会话、特别关心、邮件配置和守护记录会继续保留。无需先卸载旧版本。');
+  end;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := UpgradeDetected and (PageID = wpSelectDir);
 end;
 
 function HasCommandLineParameter(const Value: String): Boolean;
